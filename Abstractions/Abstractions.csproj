@@ -1,4 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<Description>Абстракции, интерфейсы</Description>

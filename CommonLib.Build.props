@@ -14,7 +14,7 @@
 		<!-- Не добавлять TargetFramework в путь вывода -->
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<!-- путь сборки в каталоге решения общий bin -->
-		<BaseOutputPath>bin\$(SolutionName)\</BaseOutputPath>
+		<!-- <BaseOutputPath>bin\$(SolutionName)\</BaseOutputPath> -->
 		<!-- <OutputPath>$(SolutionDir)bin\$(Configuration)</OutputPath> -->
 		<!--название файла сборки-->
 		<AssemblyName>$(SolutionName).$(MSBuildProjectName)</AssemblyName>
