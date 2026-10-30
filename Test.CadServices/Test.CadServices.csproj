@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Сервис nanoCAD</Description>
+		<UseWPF>true</UseWPF>
+		<UseWindowsForms>true</UseWindowsForms>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);TEST</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="..\Infrastructure.NC\Services\**\*.cs" Link="\%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\MulticadInterop\MulticadInterop.csproj" />
+	</ItemGroup>
+
+</Project>

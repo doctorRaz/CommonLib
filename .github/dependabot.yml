@@ -1,0 +1,31 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+registries:
+  nanodev:
+    type: nuget-feed
+    url: https://nuget.nanodev.ru/nuget
+
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    registries:
+      - nanodev
+
+    groups:
+      nuget-dependencies:
+        patterns:
+          - "*"
+    # Эти зависимости зафиксированы для совместимости проекта.
+    # Их обновление выполняется вручную и не должно предлагаться Dependabot.
+    ignore:
+        - dependency-name: "NUnit"
+        - dependency-name: "NUnit3TestAdapter"
+        - dependency-name: "MultiCAD.NET"
+        - dependency-name: "nanoCAD.Platform.NET"

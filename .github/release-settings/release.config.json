@@ -1,0 +1,18 @@
+{
+    "solution": "Common.Lib.sln",
+    "publish": [
+        {
+            "name": "SpecSPDS.NC",
+            "projects": [
+                "NC/NC.csproj"
+            ]
+        }
+    ],
+    "modules": [
+    ],
+    "subProjects": [
+    ],
+    "publicHere": true,
+    "remote": [
+    ]
+}

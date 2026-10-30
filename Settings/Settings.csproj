@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net6.0-windows</TargetFramework>
+        <Description>Хранение и управление настройками аддона</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+    </ItemGroup>
+</Project>

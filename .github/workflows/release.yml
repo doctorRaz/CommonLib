@@ -1,0 +1,310 @@
+name: Release
+
+# Универсальный release workflow.
+# Solution, проекты и репозитории публикации задаются в release.config.json.
+# Workflow не содержит имён конкретных продуктов или mirror-репозиториев.
+on:
+  push:
+    tags:
+      - '*-release*'
+      - '*-mandatory*'
+  # Позволяет workflow создания тега явно запустить Release на созданном теге.
+  # Push-триггер сохраняется для ручного push тега.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Защита от гонок: два запуска одного тега не должны перетирать assets друг друга.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_CONFIG_FILE: '.github/release-settings/release.config.json'
+  RELEASE_MINIMUM_VERSION_FILE: '.github/release-settings/release-version.txt'
+  MANDATORY_MINIMUM_VERSION_FILE: '.github/release-settings/mandatory-version.txt'
+  DOTNET_VERSION: '6.0.x'
+
+jobs:
+  release:
+    name: Test, build and release
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      # fetch-depth: 0 нужен для генерации changelog по истории тегов и коммитов.
+      # Основной репозиторий всегда checkout-ится через GITHUB_TOKEN.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: true
+          token: ${{ github.token }}
+
+      # Checkout submodules вынесен в отдельный скрипт, чтобы workflow
+      # содержал только порядок шагов, а логика доступа оставалась в одном месте.
+      - name: Checkout submodules
+        if: ${{ hashFiles('.gitmodules') != '' }}
+        shell: pwsh
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.PRIVATE_SUBMODULE_TOKEN }}
+        run: ./.github/scripts/Checkout-Submodules.ps1
+      # Валидирует конфигурацию ДО restore/build.
+      # Результаты: solution_path, publish_json, subprojects_json, modules_json,
+      # product, public_here, remote_json.
+      - name: Read release configuration
+        id: config
+        shell: pwsh
+        run: ./.github/scripts/Read-ReleaseConfig.ps1
+
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag') {
+              throw "Release workflow must be triggered by a tag, got: $($env:GITHUB_REF_TYPE)"
+          }
+
+          $tag = $env:GITHUB_REF_NAME
+          $product = $env:PRODUCT
+
+          if ($tag -notlike "${product}_*-release*" -and $tag -notlike "${product}_*-mandatory*") {
+              throw "Unsupported release tag '$tag' for product '$product'."
+          }
+
+          Write-Host "Release tag: $tag"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+          cache: true
+          cache-dependency-path: '**/*.csproj'
+
+      # Версия вычисляется ОДИН РАЗ и затем используется всеми публикациями.
+      - name: Calculate release version
+        id: version
+        shell: pwsh
+        env:
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+        run: |
+          $publishGroups = @($env:PUBLISH_JSON | ConvertFrom-Json)
+          if ($publishGroups.Count -eq 0 -or @($publishGroups[0].projects).Count -eq 0) {
+              throw 'PUBLISH_JSON does not contain a project for version calculation.'
+          }
+          $versionProject = [string]@($publishGroups[0].projects)[0]
+
+          $baseVersion = (dotnet msbuild "$versionProject" -getProperty:Version).Trim()
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) {
+              throw "Version is empty in project: $versionProject"
+          }
+
+          try { $parsedBaseVersion = [System.Version]::Parse($baseVersion) }
+          catch { throw "Invalid project Version '$baseVersion'. Expected at least Major.Minor." }
+
+          if ($parsedBaseVersion.Build -ge 0 -or $parsedBaseVersion.Revision -ge 0) {
+              throw "Project Version must contain only Major.Minor before Build and Revision are appended: $baseVersion"
+          }
+
+          $utcNow = [System.DateTime]::UtcNow
+          $build = ($utcNow - [System.DateTime]::Parse('2000-01-01')).Days
+          # Floor делает Revision детерминированным и не зависит от режима округления.
+          $revision = [Math]::Floor($utcNow.TimeOfDay.TotalSeconds / 2)
+          $fullVersion = "$baseVersion.$build.$revision"
+          [System.Version]::Parse($fullVersion) | Out-Null
+
+          Write-Host "Release version: $fullVersion"
+
+          "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "build=$build" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "revision=$revision" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "full_version=$fullVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Restore
+        env:
+          SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
+        run: dotnet restore "$env:SOLUTION_PATH"
+
+      - name: Test
+        env:
+          SOLUTION_PATH: ${{ steps.config.outputs.solution_path }}
+        run: |
+          dotnet test "$env:SOLUTION_PATH" `
+            --configuration Release `
+            --no-restore `
+            --logger "trx;LogFileName=test-results.trx" `
+            --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 7
+
+      - name: Publish projects
+        id: publish
+        shell: pwsh
+        env:
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+          SUBPROJECTS_JSON: ${{ steps.config.outputs.subprojects_json }}
+          BUILD: ${{ steps.version.outputs.build }}
+          REVISION: ${{ steps.version.outputs.revision }}
+          PRODUCT: ${{ steps.config.outputs.product }}
+        run: ./.github/scripts/Publish-Projects.ps1
+
+      - name: Determine release type
+        id: release_type
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $product = $env:PRODUCT
+
+          if ($tag -like "${product}_*-release*") {
+              $mandatory = $false
+              $minimumVersionFile = $env:RELEASE_MINIMUM_VERSION_FILE
+          }
+          elseif ($tag -like "${product}_*-mandatory*") {
+              $mandatory = $true
+              $minimumVersionFile = $env:MANDATORY_MINIMUM_VERSION_FILE
+          }
+          else { throw "Unsupported release tag: $tag" }
+
+          "mandatory=$($mandatory.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "minimum_version_file=$minimumVersionFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Read minimum version
+        id: minimum_version
+        shell: pwsh
+        env:
+          MINIMUM_VERSION_FILE: ${{ steps.release_type.outputs.minimum_version_file }}
+        run: |
+          $minimumVersion = $null
+          $file = Join-Path $env:GITHUB_WORKSPACE $env:MINIMUM_VERSION_FILE
+
+          if (Test-Path -LiteralPath $file) {
+              $text = (Get-Content -LiteralPath $file -Raw).Trim()
+              if (-not [string]::IsNullOrWhiteSpace($text)) {
+                  try { $parsedVersion = [System.Version]::Parse($text) }
+                  catch { throw "Invalid minimum version '$text' in file: $file." }
+
+                  if ($parsedVersion.Revision -lt 0) {
+                      throw "Minimum version must contain four components: $text"
+                  }
+
+                  $minimumVersion = [ordered]@{
+                      major = $parsedVersion.Major
+                      minor = $parsedVersion.Minor
+                      build = $parsedVersion.Build
+                      revision = $parsedVersion.Revision
+                  }
+              }
+          }
+
+          if ($null -eq $minimumVersion) {
+              'minimum_version_json=null' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+              "minimum_version_json=$($minimumVersion | ConvertTo-Json -Compress)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      # Заметки создаются до staging, поэтому release-notes.md входит в оба
+      # финальных архива и участвует в расчёте их SHA-256.
+      - name: Generate release notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./.github/scripts/New-ReleaseNotes.ps1
+
+      # Формирует единый staging после создания заметок. Дальше staging больше
+      # не изменяется: оба архива создаются из абсолютно одного набора файлов.
+      - name: Stage release files
+        id: stage
+        shell: pwsh
+        env:
+          PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+          PROJECT_TYPES_JSON: ${{ steps.publish.outputs.project_types_json }}
+          MODULES_JSON: ${{ steps.config.outputs.modules_json }}
+          GH_TOKEN: ${{ github.token }}
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.PRIVATE_SUBMODULE_TOKEN }}
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+        run: ./.github/scripts/Stage-ReleaseFiles.ps1
+
+      # Создаёт обычный ZIP и пароль-защищённый 7z. Манифест здесь намеренно
+      # не создаётся: он должен содержать метаданные уже готовых архивов.
+      - name: Create release archives
+        id: archives
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          STAGING_DIRECTORY: ${{ steps.stage.outputs.staging_directory }}
+        run: ./.github/scripts/New-ReleaseArchives.ps1
+
+      # Манифест строится только из метаданных готовых архивов. Повторной
+      # упаковки здесь нет, поэтому SHA-256 в update.json точно соответствует
+      # опубликованным файлам.
+      - name: Create update manifest
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          MANDATORY: ${{ steps.release_type.outputs.mandatory }}
+          MINIMUM_VERSION_JSON: ${{ steps.minimum_version.outputs.minimum_version_json }}
+          COMMIT: ${{ github.sha }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          ARCHIVE_SHA256: ${{ steps.archives.outputs.archive_sha256 }}
+          ARCHIVE_SIZE: ${{ steps.archives.outputs.archive_size }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
+          PROTECTED_SHA256: ${{ steps.archives.outputs.protected_sha256 }}
+          PROTECTED_SIZE: ${{ steps.archives.outputs.protected_size }}
+        run: ./.github/scripts/New-UpdateManifest.ps1
+
+      # publicHere=false позволяет использовать тот же workflow для решений,
+      # которым не нужен Release в исходном репозитории.
+      - name: Create release in current repository
+        if: steps.config.outputs.public_here == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
+        run: ./.github/scripts/New-Release.ps1 -Repository $env:GITHUB_REPOSITORY -VerifyTag
+
+      # Один и тот же набор финальных архивов и update.json публикуется во
+      # все настроенные удалённые репозитории без повторной сборки.
+      - name: Publish release to configured repositories
+        if: steps.config.outputs.remote_json != '[]'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.DOC_PROPS_RELEASE_TOKEN }}
+          REMOTE_JSON: ${{ steps.config.outputs.remote_json }}
+          PUBLIC_HERE: ${{ steps.config.outputs.public_here }}
+          PRODUCT: ${{ steps.config.outputs.product }}
+          FULL_VERSION: ${{ steps.version.outputs.full_version }}
+          ARCHIVE_NAME: ${{ steps.archives.outputs.archive_name }}
+          PROTECTED_ARCHIVE_NAME: ${{ steps.archives.outputs.protected_archive_name }}
+        run: |
+          $remoteRepos = @($env:REMOTE_JSON | ConvertFrom-Json)
+
+          foreach ($remoteRepo in $remoteRepos) {
+              if ($env:PUBLIC_HERE -eq 'true' -and $remoteRepo -eq $env:GITHUB_REPOSITORY) {
+                  Write-Host "Skipping configured repository because the release was already created here: $remoteRepo"
+                  continue
+              }
+
+              Write-Host "Publishing to configured repository: $remoteRepo"
+              $env:TARGET_REPO = [string]$remoteRepo
+              ./.github/scripts/Publish-PublicRelease.ps1
+
+              if ($LASTEXITCODE -ne 0) {
+                  throw "Publication failed for repository '$remoteRepo'."
+              }
+          }

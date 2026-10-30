@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\Shared.NC.props" Condition="Exists('..\Shared.NC.props')" />
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<PlatformTarget>x64</PlatformTarget>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<Description>Спецификация из универсального маркера, nanoCAD 23-26</Description>
+		<!--metadata-->
+		<HostFamily>NC</HostFamily>
+		<HostCode>n</HostCode>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);$(HostFamily)</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="MultiCAD.NET" Version="23.1.6324.4405" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\MulticadInterop\MulticadInterop.csproj" />
+		<ProjectReference Include="..\AddOnRuntime\AddOnRuntime.csproj" />
+		<ProjectReference Include="..\Common.NC\Common.NC.csproj" />
+	</ItemGroup>
+</Project>

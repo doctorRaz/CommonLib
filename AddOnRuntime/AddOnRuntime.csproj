@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Точка создания контейнера</Description>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Settings\Settings.csproj" />
+		<ProjectReference Include="..\LogBootstrap\LogBootstrap.csproj" />
+		<ProjectReference Include="..\Infrastructure.NC\Infrastructure.NC.csproj" />
+		<ProjectReference Include="..\Infrastructure\Infrastructure.csproj">
+			<PrivateAssets>all</PrivateAssets>
+		</ProjectReference>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="SimpleInjector" Version="5.5.0" >
+			<Private>True</Private>
+		</PackageReference>
+	</ItemGroup>
+</Project>

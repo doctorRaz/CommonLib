@@ -1,0 +1,26 @@
+﻿<Project>
+	<PropertyGroup>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="nanoCAD.Platform.NET" Version="23.1.6324.4405"/>
+	</ItemGroup>
+	<!-- Генерация префикса команд из имени проекта для CommandMethod. -->
+	<Target Name="GenerateCommandPrefix" BeforeTargets="CoreCompile">
+		<PropertyGroup>
+			<CommandPrefixFile>$(IntermediateOutputPath)CommandPrefix.g.cs</CommandPrefixFile>
+			<CommandPrefixValue Condition="'$(SolutionName)' == 'drzTools'">$(SolutionName)</CommandPrefixValue>
+			<CommandPrefixValue Condition="'$(SolutionName)' != 'drzTools'">drz_$(SolutionName)</CommandPrefixValue>
+		</PropertyGroup>
+		<MakeDir Directories="$(IntermediateOutputPath)"/>
+		<WriteLinesToFile File="$(CommandPrefixFile)" Overwrite="true" Lines="
+///&lt;summary&gt; Содержит константы, генерируемые перед сборкой.&lt;/summary&gt;
+internal static class CommandPrefix 
+{ 
+	/// &lt;summary&gt; Суффикс команд, формируемый из имени решения. &lt;/summary&gt;
+	public const string Value = &quot;$(CommandPrefixValue)&quot;%3B  
+}"/>
+		<ItemGroup>
+			<Compile Include="$(CommandPrefixFile)"/>
+		</ItemGroup>
+	</Target>
+</Project>

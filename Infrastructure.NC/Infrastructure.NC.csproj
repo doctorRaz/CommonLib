@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Инфраструктура и сервисы nanoCAD</Description>
+		<!--metadata-->
+		<HostFamily>NC</HostFamily>
+		<HostCode>n</HostCode>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);$(HostFamily)</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="nanoCAD.Platform.NET" Version="23.1.6324.4405" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\MulticadInterop\MulticadInterop.csproj" />
+	</ItemGroup>
+</Project>

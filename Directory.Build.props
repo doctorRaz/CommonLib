@@ -1,0 +1,91 @@
+﻿<Project>
+	<PropertyGroup>
+		<!-- Короткий идентификатор разработчика -->
+		<Vendor>dRz</Vendor>
+		<!--RootNamespace default-->
+		<RootNamespace>$(Vendor).$(MSBuildProjectName)</RootNamespace>
+		<!-- Версия языка -->
+		<LangVersion>latest</LangVersion>
+		<!-- Отключить предупреждение об окончании поддержки целевого .NET -->
+		<CheckEolTargetFramework>false</CheckEolTargetFramework>
+		<!-- Nullable Reference Types -->
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>false</ImplicitUsings>
+		<!-- Не добавлять TargetFramework в путь вывода -->
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<!-- путь сборки в каталоге решения общий bin -->
+		<BaseOutputPath>bin\$(SolutionName)\</BaseOutputPath>
+		<!-- <OutputPath>$(SolutionDir)bin\$(Configuration)</OutputPath> -->
+		<!--название файла сборки-->
+		<AssemblyName>$(SolutionName).$(MSBuildProjectName)</AssemblyName>
+	</PropertyGroup>
+	<!-- ================================================================= -->
+	<!-- Версия сборки                                                     -->
+	<!-- ================================================================= -->
+	<PropertyGroup>
+		<!-- Базовая версия продукта -->
+		<Version Condition="'$(Version)' == ''">1.5</Version>
+		<!--
+			Версия аналогична механизму AssemblyVersion=0.1.*
+			Build  = количество дней от 01.01.2000
+			Revision = секунды от начала суток / 2
+
+			При обычной сборке Build и Revision вычисляются от текущего UTC-времени.
+			Release workflow передаёт их явно, чтобы все независимые сборки одного
+			release получили одинаковую версию.
+		-->
+		<Build Condition="'$(Build)' == ''">$([System.DateTime]::UtcNow.Subtract($([System.DateTime]::Parse('2000-01-01'))).Days)</Build>
+		<Revision Condition="'$(Revision)' == ''">$([MSBuild]::Divide($([System.DateTime]::UtcNow.TimeOfDay.TotalSeconds), 2).ToString("F0"))</Revision>
+		<!-- Не генерировать второй AssemblyFileVersion -->
+		<!--<GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>-->
+	</PropertyGroup>
+	<!-- ***************************************************************** -->
+	<!-- Информация о продукте                                             -->
+	<!-- ***************************************************************** -->
+	<PropertyGroup>
+		<!-- ProductName -->
+		<Product>$(SolutionName)</Product>
+		<AssemblyTitle>$(SolutionName) $(MSBuildProjectName)</AssemblyTitle>
+		<Description>Спецификация из универсального маркера, CAD + Multicad</Description>
+		<Company>doctorRaz Technologies</Company>
+		<Trademark>doctorRaz</Trademark>
+		<StartYear>2014</StartYear>
+		<CurrentYear>$([System.DateTime]::Now.Year)</CurrentYear>
+		<!-- Авторские права -->
+		<Copyright>©Разыграев Андрей $(StartYear)-$(CurrentYear)</Copyright>
+		<!-- Домашняя страница проекта -->
+		<RepositoryUrl>https://github.com/doctorRaz/$(SolutionName)</RepositoryUrl>
+		<NeutralLanguage>ru-RU</NeutralLanguage>
+	</PropertyGroup>
+	<!-- ================================================================= -->
+	<!-- Дополнительные метаданные сборки                                  -->
+	<!-- ================================================================= -->
+	<ItemGroup>
+		<!--
+			ContactEmail
+			ContactEmailBackup
+			SupportEmail
+			LicenseEmail
+			VendorEmail
+		-->
+		<!-- Контактная информация -->
+		<AssemblyMetadata Include="ContactEmail" Value="razygraev@gmail.com"/>
+		<AssemblyMetadata Include="SupportEmail" Value="doctorRaz@gmail.com"/>
+		<AssemblyMetadata Include="VendorEmail" Value="doctorRaz@yandex.ru"/>
+		<!--домашняя страница-->
+		<AssemblyMetadata Include="HomePage" Value="https://doctorraz.blogspot.com"/>
+		<!-- Семейство Host -->
+		<AssemblyMetadata Include="HostFamily" Value="$(HostFamily)"/>
+		<!-- Код Host -->
+		<AssemblyMetadata Include="HostCode" Value="$(HostCode)"/>
+		<!--Product может быть красивым названием, а ProductFamily удобно использовать программно.-->
+		<AssemblyMetadata Include="ProductFamily" Value="$(SolutionName)$(HostCode)"/>
+		<AssemblyMetadata Include="Vendor" Value="$(Vendor)"/>
+	</ItemGroup>
+	<!-- ================================================================= -->
+	<!-- Дополнительные настройки Release                                  -->
+	<!-- ================================================================= -->
+	<PropertyGroup Condition="'$(Configuration)'!= 'Debug'">
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+</Project>

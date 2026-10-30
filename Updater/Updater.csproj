@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Обновляет приложения, чистит временные файлы</Description>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
+	<ItemGroup>
+	  <PackageReference Include="drzSharpSevenZip" Version="2.0.0" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+	</ItemGroup>
+</Project>

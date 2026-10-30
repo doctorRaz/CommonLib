@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Общие служебные</Description>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);TEST</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="..\Common.NC\Infrastructure\**\*.cs" Link="Infrastructure\%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="..\Common.NC\Services\**\*.cs" Link="Services\%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Updater\Updater.csproj" />
+	</ItemGroup>
+</Project>

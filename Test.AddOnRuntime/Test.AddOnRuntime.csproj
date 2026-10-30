@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>точка создания контейнера</Description>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="..\AddOnRuntime\*.cs" Link="\%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Settings\Settings.csproj" />
+		<ProjectReference Include="..\LogBootstrap\LogBootstrap.csproj" />
+		<ProjectReference Include="..\Test.CadServices\Test.CadServices.csproj" />
+		<ProjectReference Include="..\Infrastructure\Infrastructure.csproj">
+			<PrivateAssets>all</PrivateAssets>
+		</ProjectReference>
+	</ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="SimpleInjector" Version="5.5.0" />
+	</ItemGroup>
+</Project>
