@@ -7,13 +7,13 @@
 Публикация выполняется через release pipeline:
 
 ```
-merge PR в master / develop / test/master
+merge PR с label `publish` в master / develop
         ↓
 create-release-tag.yml
         ↓
-release/mandatory tag
+проверка версии → release/mandatory tag
         ↓
-release.yml
+явный запуск release.yml через workflow_dispatch
         ↓
 restore → test → publish → staging → archives → GitHub Release / configured remotes
 ```
@@ -28,12 +28,32 @@ Workflow:
 2. читает `release.config.json`;
 3. берёт первый проект первой группы `publish`;
 4. получает его эффективную версию через MSBuild;
-5. определяет `Major.Minor`;
-6. сравнивает Major с предыдущим release tag;
-7. выбирает `release` или `mandatory`;
-8. вычисляет следующий номер серии;
-9. создаёт annotated tag на commit merged PR;
-10. явно запускает `release.yml` через `workflow_dispatch` с созданным tag.
+5. определяет текущие `Major.Minor`;
+6. находит максимальную версию среди валидных release-тегов продукта;
+7. блокирует создание тега, если текущая версия меньше найденной по Major или по Minor при одинаковом Major;
+8. выбирает `mandatory`, если Major увеличился, иначе `release`;
+9. вычисляет следующий номер соответствующей серии;
+10. создаёт annotated tag на commit merged PR;
+11. явно запускает `release.yml` через `workflow_dispatch` с созданным tag.
+
+**Проверка версии перед созданием тега**
+
+Учитываются теги обоих типов: `release` и `mandatory`. Валидным считается тег строго следующего формата:
+
+```
+<solution>_<major>.<minor>-releaseN
+<solution>_<major>.<minor>-mandatoryN
+```
+
+Тестовые и невалидные теги игнорируются. Из валидных тегов выбирается максимальная пара `Major.Minor`:
+
+- первый релиз разрешён, если валидных тегов ещё нет;
+- уменьшение Major блокируется;
+- при одинаковом Major уменьшение Minor блокируется;
+- увеличение Major или Minor разрешается;
+- равная версия разрешается.
+
+При блокировке workflow завершается с ошибкой до создания тега.
 
 Формат tag:
 
@@ -44,7 +64,9 @@ Workflow:
 
 Изменение Major является границей `mandatory`. Для `release` и `mandatory` используются независимые счётчики.
 
-Создание tag само по себе не выполняет сборку и публикацию. После создания tag запускается `release.yml`.
+Создание tag само по себе не выполняет сборку и публикацию.
+
+У `release.yml` есть два триггера: `push` по тегам `*-release*` / `*-mandatory*` и `workflow_dispatch`. При создании тега через `github.token` GitHub не запускает другой workflow обычным событием `push`, поэтому `create-release-tag.yml` явно вызывает `gh workflow run release.yml --ref "$TAG"`. В результате Release запускается на commit созданного тега. Триггер `push` сохраняется для случаев, когда тег отправлен способом, который запускает push-workflow.
 
 ### 2. Release
 
@@ -79,7 +101,7 @@ restore → build → test
 
 CI не создаёт release tag и не публикует Release.
 
-CI запускается для PR в `master`, после изменения `master`, а также может быть запущен вручную через `workflow_dispatch`.
+CI запускается для PR в `master`, после push в `master`, а также вручную через `workflow_dispatch` на выбранной ветке. Автоматического запуска CI для PR в `develop` в текущей конфигурации нет.
 
 ## Файлы
 
@@ -269,71 +291,86 @@ Release workflow:
 
 Mega Release не является module этого контракта и не должен подключаться через `modules`.
 
-## Полный пример текущей конфигурации
+## Полный пример конфигурации
 
-Ниже приведён полный фактически используемый сейчас `.github/release-settings/release.config.json` из ветки `test/master`:
+Ниже приведён иллюстративный пример, показывающий возможности `release.config.json`. Это не конфигурация конкретного проекта. В примере используются все основные разделы: несколько групп публикации, дополнительные проекты (`subProjects`), внешние модули (`modules`), публикация в текущий и внешний репозитории.
 
 ```json
 {
-    "solution": "LFIO.sln",
+    "solution": "Product.sln",
     "publish": [
         {
-            "name": "NC",
+            "name": "Product.NC",
             "projects": [
-                "NC/LFIO_NC.csproj",
-                "NC2/LFIO_NC21.csproj",
-                "NC3/LFIO_NC26.csproj"
+                "NC/Product.NC.csproj",
+                "NC21/Product.NC21.csproj"
             ]
         },
         {
-            "name": "AC",
+            "name": "Product.AC",
             "projects": [
-                "AC/LFIO_AC2018.csproj",
-                "AC2/LFIO_AC2019.csproj",
-                "AC3/LFIO_AC2020.csproj"
+                "AC/Product.AC.csproj"
             ]
         }
     ],
     "subProjects": [
         {
-            "name": "ChangeDBmod_NC",
+            "name": "Additional.NC",
             "projects": [
-                "ChangedbMod/ChangeDBmod.NC/ChangeDBmod.NC.csproj",
-                "ChangedbMod/ChangeDBmod.NC.21/ChangeDBmod.NC.21.0.csproj",
-                "ChangedbMod/ChangeDBmod.NC.26/ChangeDBmod.NC.26.0.csproj"
+                "SubProjects/Additional.NC/Additional.NC.csproj",
+                "SubProjects/Additional.NC21/Additional.NC21.csproj"
             ]
         },
         {
-            "name": "ChangeDBmod_AC",
+            "name": "Additional.AC",
             "projects": [
-                "ChangedbMod/ChangeDBmod.AC2018/ChangeDBmod.AC2018.csproj"
+                "SubProjects/Additional.AC/Additional.AC.csproj"
             ]
         }
     ],
     "modules": [
         {
-            "repository": "doctorRaz/Publish_Test",
+            "repository": "organization/SharedModules",
             "projects": [
-                "drzTools/Archivist",
-                "drzTools/Text_LSP"
+                "Modules/ModuleA",
+                {
+                    "path": "Modules/ModuleB",
+                    "notUnique": true
+                },
+                {
+                    "path": "Documentation",
+                    "notUnique": true
+                }
+            ]
+        },
+        {
+            "repository": "organization/AnotherModule",
+            "projects": [
+                {
+                    "path": "Documentation",
+                    "notUnique": true
+                }
             ]
         }
     ],
     "publicHere": true,
     "remote": [
-        "doctorRaz/LFIO"
+        "organization/ProductDistribution"
     ]
 }
 ```
 
-В этой конфигурации:
+Назначение разделов примера:
 
-- `NC` объединяет три основных проекта в один каталог release;
-- `AC` объединяет три основных проекта в один каталог release;
-- `ChangeDBmod_NC` объединяет три проекта subProject;
-- `ChangeDBmod_AC` содержит один проект subProject;
-- module `doctorRaz/Publish_Test` поставляет два внешних проекта;
-- `doctorRaz/LFIO` получает тот же итоговый release как configured remote.
+- `solution` задаёт основное решение, из которого определяется продукт и выполняется основная сборка.
+- `publish` содержит две группы основных проектов. Результаты проектов каждой группы объединяются в соответствующем каталоге staging.
+- `subProjects` содержит дополнительные группы проектов. Они могут находиться в git submodules и публикуются в отдельные каталоги staging.
+- `modules` подключает опубликованные артефакты двух внешних репозиториев. Для каждого модуля перечислены каталоги, которые нужно извлечь из его ZIP.
+- `notUnique: true` разрешает объединить содержимое каталогов с одинаковым конечным именем. В примере документация из двух модулей попадёт в общий каталог; совпадающие относительные пути файлов приведут к ошибке.
+- `publicHere: true` включает создание GitHub Release в текущем репозитории.
+- `remote` задаёт дополнительный репозиторий, в который публикуется тот же набор готовых release-файлов.
+
+Имена решений, проектов, групп и репозиториев в примере условные. При использовании примера их необходимо заменить значениями конкретного проекта. Если какая-либо возможность не используется, соответствующий массив можно оставить пустым.
 
 ## Ключи и токены GitHub Actions
 

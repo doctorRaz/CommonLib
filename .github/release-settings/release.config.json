@@ -1,8 +1,8 @@
 {
-    "solution": "CommonLib.sln",
+    "solution": "SpecSPDS.sln",
     "publish": [
         {
-            "name": "CommonLib.NC",
+            "name": "SpecSPDS.NC",
             "projects": [
                 "NC/NC.csproj"
             ]
@@ -12,7 +12,7 @@
     ],
     "subProjects": [
     ],
-    "publicHere": true,
+    "publicHere": false,
     "remote": [
     ]
 }
