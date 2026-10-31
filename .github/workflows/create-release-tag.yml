@@ -113,6 +113,55 @@ jobs:
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Next tag: $tag"
 
+      # Защищаем историю релизов от уменьшения Major или Minor.
+      # Проверка выполняется после расчёта нового тега и непосредственно перед его созданием.
+      - name: Validate release version is not lower
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.version.outputs.product }}
+          CURRENT_MAJOR: ${{ steps.version.outputs.major }}
+          CURRENT_MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          $productPattern = [regex]::Escape($env:PRODUCT)
+          $validTagPattern = '^' + $productPattern + '_([0-9]+)\.([0-9]+)-(release|mandatory)([0-9]+)$'
+          $latestMajor = $null
+          $latestMinor = $null
+          $latestTag = $null
+
+          $tags = @(git tag --list "$($env:PRODUCT)_*")
+          foreach ($tag in $tags) {
+              if ($tag -match $validTagPattern) {
+                  $tagMajor = [int]$Matches[1]
+                  $tagMinor = [int]$Matches[2]
+
+                  if ($null -eq $latestMajor -or
+                      $tagMajor -gt $latestMajor -or
+                      ($tagMajor -eq $latestMajor -and $tagMinor -gt $latestMinor)) {
+                      $latestMajor = $tagMajor
+                      $latestMinor = $tagMinor
+                      $latestTag = $tag
+                  }
+              }
+          }
+
+          if ($null -eq $latestMajor) {
+              Write-Host "No valid release tags found for product '$($env:PRODUCT)'. The first release is allowed."
+              exit 0
+          }
+
+          $currentMajor = [int]$env:CURRENT_MAJOR
+          $currentMinor = [int]$env:CURRENT_MINOR
+          Write-Host "Latest valid release tag: $latestTag ($latestMajor.$latestMinor)"
+          Write-Host "Candidate release version: $currentMajor.$currentMinor"
+
+          if ($currentMajor -lt $latestMajor -or
+              ($currentMajor -eq $latestMajor -and $currentMinor -lt $latestMinor)) {
+              Write-Error "Release version $currentMajor.$currentMinor is lower than the latest valid release version $latestMajor.$latestMinor (tag '$latestTag'). Tag creation cancelled."
+              exit 1
+          }
+
+          Write-Host "Release version check passed."
+
       - name: Create tag on merged commit
         env:
           TAG: ${{ steps.next-tag.outputs.tag }}
