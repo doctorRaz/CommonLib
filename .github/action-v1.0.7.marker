@@ -6,3 +6,4 @@
 1.04 -p:SolutionName=$env:PRODUCT передается в сборку
 1.05 if ($tag -match "^$([regex]::Escape($env:PRODUCT))_([0-9]+)\.([0-9]+)-(release|mandatory)([0-9]+)$")
 1.06 Добавлена проверка версии перед созданием релизного тега в .github/workflows/create-release-tag.yml.
+1.07 При чтении версии проекта для создания релизного тега явно передаётся SolutionName, чтобы применялись настройки версии из CommonLib.Build.props.
