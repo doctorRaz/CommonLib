@@ -68,6 +68,7 @@ namespace dRz.Updater
         /// Если локальное расположение основной сборки не подтверждено, обновление не выполняется.
         /// </summary>
         /// <param name="request">Параметры обновления, сформированные основным аддоном.</param>
+        /// <param name="cancellationToken">Токен отмены</param>
         /// <returns>Результат проверки и установки обновления.</returns>
         public async Task<UpdateResult> RunAsync(
             UpdateRequest request,
