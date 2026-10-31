@@ -89,6 +89,7 @@ jobs:
         shell: pwsh
         env:
           PUBLISH_JSON: ${{ steps.config.outputs.publish_json }}
+          PRODUCT: ${{ steps.config.outputs.product }}
         run: |
           $publishGroups = @($env:PUBLISH_JSON | ConvertFrom-Json)
           if ($publishGroups.Count -eq 0 -or @($publishGroups[0].projects).Count -eq 0) {
@@ -96,7 +97,7 @@ jobs:
           }
           $versionProject = [string]@($publishGroups[0].projects)[0]
 
-          $baseVersion = (dotnet msbuild "$versionProject" -getProperty:Version).Trim()
+          $baseVersion = (dotnet msbuild "$versionProject" -p:SolutionName="$env:PRODUCT" -getProperty:Version).Trim()
           if ([string]::IsNullOrWhiteSpace($baseVersion)) {
               throw "Version is empty in project: $versionProject"
           }
