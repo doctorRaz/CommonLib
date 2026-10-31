@@ -22,18 +22,21 @@ namespace dRz.Common.NC.CadServices
         {
             string key = $"{value.GetType().FullName}.{value}";
 
-            string displayName = DisplayNameCache.GetOrAdd(key, x =>
-            {
-                DescriptionAttribute[] name = (DescriptionAttribute[])value
-                    .GetType()
-                    .GetTypeInfo()
-                    .GetField(value.ToString())
-                    .GetCustomAttributes(typeof(DescriptionAttribute), false);
+            string name = value.ToString();
 
-                return name.Length > 0 ? name[0].Description : value.ToString();
-            });
+            FieldInfo? field = value.GetType().GetTypeInfo().GetField(name);
 
-            return displayName;
+            return DisplayNameCache.GetOrAdd(key, _ =>
+          {
+              string name = value.ToString();
+
+              FieldInfo? field = value.GetType().GetTypeInfo().GetField(name);
+
+              DescriptionAttribute? attribute = field?
+                  .GetCustomAttribute<DescriptionAttribute>();
+
+              return attribute?.Description ?? name;
+          });
         }
     }
 }
