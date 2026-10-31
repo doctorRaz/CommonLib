@@ -53,7 +53,7 @@ jobs:
           # Используем MSBuild, а не разбираем XML .csproj напрямую.
           # Так учитываются Directory.Build.props, свойства проекта и их
           # переопределения в вычисленной конфигурации проекта.
-          $baseVersion = (dotnet msbuild "$projectFile" -getProperty:Version).Trim()
+          $baseVersion = (dotnet msbuild "$projectFile" -p:SolutionName="$product" -getProperty:Version).Trim()
           if ([string]::IsNullOrWhiteSpace($baseVersion)) { throw "Effective Version was not found for first project: $projectPath" }
           if ($baseVersion -notmatch '^([0-9]+).([0-9]+)$') { throw "Effective project Version must contain only Major.Minor: '$baseVersion'" }
           $major = [int]$Matches[1]
