@@ -1,5 +1,5 @@
 ﻿<Project>
-	<PropertyGroup>
+	<PropertyGroup> 
 		<!-- Короткий идентификатор разработчика -->
 		<Vendor>dRz</Vendor>
 		<!--RootNamespace default-->
