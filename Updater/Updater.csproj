@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Обновляет приложения, чистит временные файлы</Description>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="drzSharpSevenZip" Version="2.0.0"/>
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj"/>
+	</ItemGroup>
+</Project>

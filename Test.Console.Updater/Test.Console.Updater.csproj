@@ -1,0 +1,47 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
+<PropertyGroup>
+				<TargetFramework>net6.0-windows</TargetFramework>
+		<OutputType>Exe</OutputType>
+		<PlatformTarget>x64</PlatformTarget>
+			<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<UseWPF>true</UseWPF>
+		<!-- значение по умолчанию мин версии-->
+		<MinVersion Condition="'$(MinVersion)' == ''">20</MinVersion>
+		<!--для GeneratedCompile.cs не удалять-->
+		<SolutionNameSafe Condition="'$(SolutionName)'==''">NoSolution</SolutionNameSafe>
+		<SolutionNameSafe Condition="'$(SolutionName)'!=''">$(SolutionName)</SolutionNameSafe>
+		<!--*******-->
+		<Description>Отладка в консоли</Description>
+		<!--metadata-->
+		<HostFamily>TEST</HostFamily>
+		<HostCode>Console</HostCode>
+
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);$(HostFamily)</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Test.AddOnRuntime\Test.AddOnRuntime.csproj" />
+		<ProjectReference Include="..\Test.Common.NC\Test.Common.NC.csproj" />
+	</ItemGroup>
+	<!--metadata assemble-->
+	<ItemGroup>
+		<AssemblyMetadata Include="HostFamily" Value="$(HostFamily)" />
+		<AssemblyMetadata Include="HostCode" Value="$(HostCode)" />
+	</ItemGroup>
+	<!-- Генерация класса с константой MinVersion перед сборкой -->
+	<!--https://chatgpt.com/c/69bf9254-02bc-832c-bfb7-5da312cc712a-->
+	<Target Name="GeneratedCompile" BeforeTargets="PrepareForBuild">
+		<WriteLinesToFile File="$(IntermediateOutputPath)GeneratedCompile.cs" Overwrite="true" Lines="&#xD;&#xA;namespace drz.Loader&#xD;&#xA;{&#xD;&#xA;    /// &lt;summary&gt;&#xD;&#xA;    /// Содержит константы, генерируемые перед сборкой.&#xD;&#xA;    /// &lt;/summary&gt;&#xD;&#xA;    public static class GeneratedCompile&#xD;&#xA;    {&#xD;&#xA;        /// &lt;summary&gt;&#xD;&#xA;        /// Минимальная поддерживаемая версия.&#xD;&#xA;        /// &lt;/summary&gt;&#xD;&#xA;        public const int MinVersion = $(MinVersion)%3B&#xD;&#xA;        /// &lt;summary&gt;&#xD;&#xA;        /// Суффикс команд, формируемый из имени решения.&#xD;&#xA;        /// &lt;/summary&gt;&#xD;&#xA;        public const string CommandSuf = &quot;$(SolutionNameSafe)&quot;%3B&#xD;&#xA;    }&#xD;&#xA;}" />
+	</Target>
+	<ItemGroup>
+		<Compile Include="$(IntermediateOutputPath)GeneratedCompile.cs" Visible="false" />
+		<Compile Include="..\NC\EntryPoint.cs" Link="EntryPoint.cs" />
+		
+		
+	</ItemGroup>
+
+</Project>

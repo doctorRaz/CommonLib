@@ -1,0 +1,193 @@
+name: Create release tag
+
+# Автоматически создаёт release/mandatory-тег после слияния PR в master.
+# Публикацию GitHub Release выполняет отдельный release.yml, который
+# запускается после создания тега.
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+      - develop
+      - develop-test
+
+permissions:
+  contents: write
+  # Нужно для явного запуска другого workflow через workflow_dispatch.
+  actions: write
+
+jobs:
+  create-tag:
+    name: Create release tag
+    if: >
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'publish')
+    runs-on: ubuntu-latest
+
+    env:
+      RELEASE_CONFIG_FILE: '.github/release-settings/release.config.json'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      # Версия берётся из первого проекта первой группы publish.
+      - name: Read version configuration
+        id: version
+        shell: pwsh
+        run: |
+          $configPath = Join-Path $env:GITHUB_WORKSPACE $env:RELEASE_CONFIG_FILE
+          if (-not (Test-Path -LiteralPath $configPath)) { throw "Release configuration was not found: $configPath" }
+          $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+          if ($null -eq $config.publish -or @($config.publish).Count -eq 0) { throw "Release configuration property 'publish' must contain at least one group." }
+          if ($null -eq $config.publish[0].projects -or @($config.publish[0].projects).Count -eq 0) { throw "First publish group must contain at least one project." }
+          $projectPath = [string]@($config.publish[0].projects)[0]
+          $projectFile = Join-Path $env:GITHUB_WORKSPACE $projectPath
+          if (-not (Test-Path -LiteralPath $projectFile)) { throw "First configured project was not found: $projectPath" }
+          $product = [System.IO.Path]::GetFileNameWithoutExtension([string]$config.solution)
+          if ([string]::IsNullOrWhiteSpace($product)) { throw "Could not determine product name from solution: $($config.solution)" }
+
+          # Используем MSBuild, а не разбираем XML .csproj напрямую.
+          # Так учитываются Directory.Build.props, свойства проекта и их
+          # переопределения в вычисленной конфигурации проекта.
+          $baseVersion = (dotnet msbuild "$projectFile" -p:SolutionName="$product" -getProperty:Version).Trim()
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) { throw "Effective Version was not found for first project: $projectPath" }
+          if ($baseVersion -notmatch '^([0-9]+).([0-9]+)$') { throw "Effective project Version must contain only Major.Minor: '$baseVersion'" }
+          $major = [int]$Matches[1]
+          $minor = [int]$Matches[2]
+          "project=$projectPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "product=$product" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "major=$major" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "minor=$minor" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Product: $product"
+          Write-Host "First project: $projectPath"
+          Write-Host "Effective Version: $baseVersion"
+
+      # Сравниваем Major текущей версии с предыдущей версией из тегов.
+      - name: Determine release type
+        id: release-type
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.version.outputs.product }}
+          CURRENT_MAJOR: ${{ steps.version.outputs.major }}
+        run: |
+          $tags = @(git tag --list "$($env:PRODUCT)_*" --sort=-version:refname)
+          $previousMajor = $null
+          foreach ($tag in $tags) {
+              if ($tag -match "^$([regex]::Escape($env:PRODUCT))_([0-9]+)\.([0-9]+)-(release|mandatory)([0-9]+)$") {
+                  $previousMajor = [int]$Matches[1]
+                  Write-Host "Previous release tag: $tag"
+                  break
+              }
+          }
+          if ($null -eq $previousMajor) { $type = 'release' }
+          elseif ([int]$env:CURRENT_MAJOR -ne $previousMajor) { $type = 'mandatory' }
+          else { $type = 'release' }
+          "type=$type" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Release type: $type"
+
+      # release и mandatory имеют независимые счётчики внутри своей серии.
+      - name: Calculate next tag number
+        id: next-tag
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.version.outputs.product }}
+          BASE_VERSION: ${{ steps.version.outputs.base_version }}
+          RELEASE_TYPE: ${{ steps.release-type.outputs.type }}
+        run: |
+          $prefix = "$($env:PRODUCT)_$($env:BASE_VERSION)-$($env:RELEASE_TYPE)"
+          $existing = @(git tag --list "$prefix[0-9]*")
+          $maxNumber = 0
+          foreach ($tag in $existing) {
+              if ($tag -match "^$([regex]::Escape($prefix))([0-9]+)$") {
+                  $number = [int]$Matches[1]
+                  if ($number -gt $maxNumber) { $maxNumber = $number }
+              }
+          }
+          $nextNumber = $maxNumber + 1
+          $tag = "$prefix$nextNumber"
+          if (git tag --list $tag) { throw "Tag '$tag' already exists. Refusing to overwrite an existing tag." }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Next tag: $tag"
+
+      # Защищаем историю релизов от уменьшения Major или Minor.
+      # Проверка выполняется после расчёта нового тега и непосредственно перед его созданием.
+      - name: Validate release version is not lower
+        shell: pwsh
+        env:
+          PRODUCT: ${{ steps.version.outputs.product }}
+          CURRENT_MAJOR: ${{ steps.version.outputs.major }}
+          CURRENT_MINOR: ${{ steps.version.outputs.minor }}
+        run: |
+          $productPattern = [regex]::Escape($env:PRODUCT)
+          $validTagPattern = '^' + $productPattern + '_([0-9]+)\.([0-9]+)-(release|mandatory)([0-9]+)$'
+          $latestMajor = $null
+          $latestMinor = $null
+          $latestTag = $null
+
+          $tags = @(git tag --list "$($env:PRODUCT)_*")
+          foreach ($tag in $tags) {
+              if ($tag -match $validTagPattern) {
+                  $tagMajor = [int]$Matches[1]
+                  $tagMinor = [int]$Matches[2]
+
+                  if ($null -eq $latestMajor -or
+                      $tagMajor -gt $latestMajor -or
+                      ($tagMajor -eq $latestMajor -and $tagMinor -gt $latestMinor)) {
+                      $latestMajor = $tagMajor
+                      $latestMinor = $tagMinor
+                      $latestTag = $tag
+                  }
+              }
+          }
+
+          if ($null -eq $latestMajor) {
+              Write-Host "No valid release tags found for product '$($env:PRODUCT)'. The first release is allowed."
+              exit 0
+          }
+
+          $currentMajor = [int]$env:CURRENT_MAJOR
+          $currentMinor = [int]$env:CURRENT_MINOR
+          Write-Host "Latest valid release tag: $latestTag ($latestMajor.$latestMinor)"
+          Write-Host "Candidate release version: $currentMajor.$currentMinor"
+
+          if ($currentMajor -lt $latestMajor -or
+              ($currentMajor -eq $latestMajor -and $currentMinor -lt $latestMinor)) {
+              Write-Error "Release version $currentMajor.$currentMinor is lower than the latest valid release version $latestMajor.$latestMinor (tag '$latestTag'). Tag creation cancelled."
+              exit 1
+          }
+
+          Write-Host "Release version check passed."
+
+      - name: Create tag on merged commit
+        env:
+          TAG: ${{ steps.next-tag.outputs.tag }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          TAG_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if [ -z "$MERGE_SHA" ] || [ "$MERGE_SHA" = "null" ]; then
+            echo "Merged commit SHA is unavailable."
+            exit 1
+          fi
+          git fetch origin "$MERGE_SHA" --no-tags
+          jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" > tag-message.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$MERGE_SHA" --cleanup=verbatim -F tag-message.txt
+          git push "https://x-access-token:$TAG_TOKEN@github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG"
+          echo "Created annotated tag '$TAG' on commit '$MERGE_SHA'."
+
+      - name: Start Release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.next-tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+          echo "Started Release workflow for tag '$TAG'."

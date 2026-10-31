@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
+    <PropertyGroup>
+        <TargetFramework>net6.0-windows</TargetFramework>
+        <Description>Хранение и управление настройками аддона</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+    </ItemGroup>
+</Project>
