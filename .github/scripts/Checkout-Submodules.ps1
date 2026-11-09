@@ -59,18 +59,6 @@ function Update-Submodules([string]$root) {
     }
 }
 
-# Если в release.config.json нет subProjects, checkout субмодулей не требуется.
-$configPath = Join-Path $env:GITHUB_WORKSPACE $env:RELEASE_CONFIG_FILE
-if (-not (Test-Path -LiteralPath $configPath)) {
-    throw "Release configuration was not found: $configPath"
-}
-
-$config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-if (@($config.subProjects).Count -eq 0) {
-    Write-Host "No submodules are configured for this release. Skipping submodule checkout."
-    exit 0
-}
-
 # Синхронизируем URL перед рекурсивным обходом, чтобы каждый submodule
 # использовал актуальную конфигурацию .gitmodules.
 git submodule sync --recursive

@@ -3,11 +3,14 @@ using dRz.Abstractions.Logger;
 using dRz.Abstractions.Services;
 using dRz.Abstractions.Services.Message;
 using dRz.Abstractions.Settings;
+using dRz.Abstractions.Updater;
 using dRz.AddOnRuntime;
 using dRz.Common.NC.Infrastructure;
 using dRz.Common.NC.Services.Updater;
 using dRz.Updater.Services;
 using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 #if !TEST
 
@@ -41,7 +44,7 @@ namespace dRz.NC
     /// </summary>
     public class EntryPoint
 #if !TEST
-        : Rtm.IExtensionApplication
+      : Rtm.IExtensionApplication
 #endif
     {
         private static bool _isAddOnCompositionRoot;//контейнер наполнен
@@ -64,6 +67,12 @@ namespace dRz.NC
 
         private ISysInfo _sysInfo = null!;// Сведения о системе.
 
+        private readonly object _updateGate = new object();
+        private UpdateAsync? _updateAsync;
+        private CancellationTokenSource? _updateCancellation;
+        private Task? _updateTask;
+        private bool _isTerminating;
+
         /// <summary>
         /// Инициализирует аддон: регистрирует сервисы и настройки, запускает проверку обновлений
         /// и выполняет оставшуюся инициализацию.
@@ -78,6 +87,10 @@ namespace dRz.NC
             {
                 // Инициализация сервисов аддона и получение необходимых сервисов из контейнера.
                 InitializeServices();
+                UpdateAsync.SetManualCheckHandler(StartManualUpdate);
+
+                // Показываем результат установки, выполненной при предыдущем завершении nanoCAD.
+                UpdateResultMarker.ReportAndDelete(_addOnInfo.AssemblyDirectory, _message, _logger);
 
                 // Проверяем, что аддон загружен в родной каталог, и предупреждаем пользователя о возможных ошибках.
 
@@ -97,37 +110,10 @@ namespace dRz.NC
                 // Записываем сведения о сборке аддона и CAD-хосте в журнал и выводим приветственное сообщение.
                 ReportInitialization();
             }
-            catch (Exception ex) // Ошибка общей инициализации: сообщаем пользователю и записываем её в журнал, если сервисы доступны.
-                                 // Если ошибка поднялась сюда, то вероятно, что аддон неработоспособен
+            catch (Exception ex)// Ошибка общей инициализации: сообщаем пользователю и записываем её в журнал, если сервисы доступны.
+                                // Если ошибка поднялась сюда, то вероятно, что аддон неработоспособен
             {
                 HandleError(ex, "Приложение не загружено!!!", isFatal: true, notifyUser: true);
-            }
-        }
-
-        /// <summary>
-        /// Запускает обновление и очистку служебных файлов в фоновом асинхронном процессе.
-        /// </summary>
-        /// <remarks>
-        /// Задача намеренно не ожидается, чтобы не блокировать синхронную инициализацию CAD-хоста.
-        /// Исключения, возникшие до передачи управления асинхронному методу, обрабатываются здесь;
-        /// ошибки внутри задачи должны обрабатываться самим <see cref="UpdateAsync"/>.
-        /// </remarks>
-        private void StartUpdate()
-        {
-            try
-            {
-                // Создаём экземпляр класса UpdateAsync для выполнения обновления и очистки служебных файлов.
-                UpdateAsync updateAsync = new UpdateAsync(_loggerFactory, _message, _messagePrompt);
-
-                // Запускаем асинхронное обновление и очистку служебных файлов в фоновом процессе.
-                _ = updateAsync.UpdateAsyncRun(UpdateLaunchMode.Automatic,
-                                                _settings,
-                                                _addOnInfo);
-            }
-            catch (Exception ex)
-            {
-                // Ошибка запуска фоновой операции не должна прерывать инициализацию CAD-хоста.
-                HandleError(ex, "Не удалось запустить фоновое обновление.", isFatal: false, notifyUser: false);
             }
         }
 
@@ -186,6 +172,94 @@ namespace dRz.NC
                 // Логирование и уведомление выполняются в Initialize(), чтобы не записывать ошибку дважды.
                 // Сохраняем исходное исключение во внутренней цепочке для диагностики.
                 throw new InvalidOperationException("AddOnCompositionRoot initialization failed", ex);
+            }
+        }
+
+        /// <summary>
+        /// Запускает обновление и очистку служебных файлов в фоновом асинхронном процессе.
+        /// </summary>
+        /// <remarks>
+        /// Задача намеренно не ожидается, чтобы не блокировать синхронную инициализацию CAD-хоста.
+        /// Исключения, возникшие до передачи управления асинхронному методу, обрабатываются здесь;
+        /// ошибки внутри задачи должны обрабатываться самим <see cref="UpdateAsync"/>.
+        /// </remarks>
+        private void StartUpdate()
+        {
+            StartUpdate(UpdateLaunchMode.Automatic);
+        }
+
+        /// <summary>
+        /// Запускает подготовку обновления в указанном режиме, не устанавливая пакет.
+        /// Использует единый координатор, общий для автоматической и ручной проверки.
+        /// </summary>
+        private void StartUpdate(UpdateLaunchMode launchMode)
+        {
+            try
+            {
+                lock (_updateGate)
+                {
+                    _isTerminating = false;
+                    _updateCancellation?.Dispose();
+                    _updateCancellation = new CancellationTokenSource();
+                    _updateAsync ??= new UpdateAsync(_loggerFactory, _message, _messagePrompt);
+
+                    _updateTask = _updateAsync.PrepareUpdateAsyncRun(
+                        launchMode,
+                        _settings,
+                        _addOnInfo,
+                        _updateCancellation.Token);
+
+                    // Если nanoCAD завершится раньше подготовки, поздно завершившаяся задача
+                    // только удалит временные файлы и не сможет начать установку.
+                    _ = _updateTask.ContinueWith(
+                        _ =>
+                        {
+                            lock (_updateGate)
+                            {
+                                if (_isTerminating)
+                                {
+                                    _updateAsync?.DiscardPrepared();
+                                }
+                            }
+                        },
+                        CancellationToken.None,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleError(ex, "Не удалось запустить фоновую подготовку обновления.", isFatal: false, notifyUser: false);
+            }
+        }
+
+
+        private void StartManualUpdate()
+        {
+            lock (_updateGate)
+            {
+                if (_isTerminating)
+                {
+                    return;
+                }
+
+                if (_updateAsync?.PreparedUpdate is not null)
+                {
+                    _message.InfoMessage(
+                        "Обновление уже подготовлено и будет установлено при закрытии nanoCAD.",
+                        title: "Updater");
+                    return;
+                }
+
+                if (_updateTask is { IsCompleted: false })
+                {
+                    _message.InfoMessage(
+                        "Проверка обновлений уже выполняется. Повторный запуск не требуется.",
+                        title: "Updater");
+                    return;
+                }
+
+                StartUpdate(UpdateLaunchMode.Manual);
             }
         }
 
@@ -311,16 +385,77 @@ namespace dRz.NC
 #endif
         }
 
-        /// <summary>
-        ///  Выполняет завершающие действия при выгрузке аддона из CAD-хоста.
-        /// </summary>
+        /// <summary>Terminates this instance.</summary>
         public void Terminate()
         {
-            _logger?.Trace($"{nameof(EntryPoint)}: Terminate");
+            lock (_updateGate)
+            {
+                _isTerminating = true;
+                UpdateAsync.SetManualCheckHandler(null);
+                _logger?.Trace($"{nameof(EntryPoint)}: Terminate");
 
-            // Сохранение настроек здесь не выполняется: состояние настроек управляется отдельным сервисом.
-            //dsf.SaveDataSet();
-            //dsf.SetGeneralSetting.WriteValue("TEST", "terminate", "true");
+                try
+                {
+                    if (_updateTask is null || _updateAsync is null)
+                    {
+                        return;
+                    }
+
+                    if (_updateTask.IsCompleted)
+                    {
+                        // Подготовка уже закончилась: установка выполняется синхронно,
+                        // пока nanoCAD выгружает загруженные сборки.
+                        if (_updateAsync.PreparedUpdate is not null)
+                        {
+                            UpdateResult result = _updateAsync.InstallPrepared();
+                            PreparedUpdate? installed = _updateAsync.LastInstalledUpdate;
+
+                            if (installed is not null)
+                            {
+                                string message = result == UpdateResult.Installed
+                                    ? installed.ResultMessage ?? "Обновление успешно установлено. Перезапусти nanoCAD."
+                                    : installed.ErrorMessage ?? "Не удалось установить обновление. Подробности — в журнале PlotSPDS.";
+
+                                UpdateResultMarker.Write(
+                                    _addOnInfo.AssemblyDirectory,
+                                    result,
+                                    installed.Request.CurrentVersion.ToString(),
+                                    installed.Update.Version.ToVersion().ToString(),
+                                    message,
+                                    _logger);
+                            }
+                        }
+
+                        return;
+                    }
+
+                    // Не ждём сеть или распаковку. Позднее завершение подготовки будет отменено
+                    // либо очищено continuation выше.
+                    try
+                    {
+                        _updateCancellation?.Cancel();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.Error(ex, "Не удалось отменить подготовку обновления при завершении nanoCAD.");
+                    }
+                }
+                finally
+                {
+                    // Удаляем временные каталоги завершившихся сессий независимо от того,
+                    // была ли установка, подготовка ещё выполнялась или обновление отсутствовало.
+                    // Собственная активная/подготовленная сессия защищена session.lock и будет
+                    // очищена после отмены либо установки; другие активные экземпляры не затрагиваются.
+                    try
+                    {
+                        _updateAsync?.CleanupStaleTemporaryDirectories();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.Error(ex, "Не удалось очистить временные каталоги Updater при завершении nanoCAD.");
+                    }
+                }
+            }
         }
     }
 }

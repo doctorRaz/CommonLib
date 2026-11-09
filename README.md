@@ -186,3 +186,7 @@ dotnet build .\CommonLib.sln -c Debug
 - [NC — демонстрационный аддон](NC/README.md)
 
 Документация описывает назначение модулей и их публичные контракты. Точные сигнатуры и детали поведения определяются исходным кодом и XML-комментариями публичного API.
+
+——
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/doctorRaz/CommonLib)
