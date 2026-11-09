@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ApplicationPackage xmlns="hostApplicationPackage/v01"
+                    Name="CommonLib">
+	<Components>
+		<ComponentEntry AppName="CommonLib"
+		                ModuleName="/CommonLib.NC/CommonLib.NC.dll"
+		                ModuleType="MGD"/>
+	</Components>
+</ApplicationPackage>
