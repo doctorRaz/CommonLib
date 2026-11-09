@@ -7,3 +7,5 @@
 1.05 if ($tag -match "^$([regex]::Escape($env:PRODUCT))_([0-9]+)\.([0-9]+)-(release|mandatory)([0-9]+)$")
 1.06 Добавлена проверка версии перед созданием релизного тега в .github/workflows/create-release-tag.yml.
 1.07 При чтении версии проекта для создания релизного тега явно передаётся SolutionName, чтобы применялись настройки версии из CommonLib.Build.props.
+1.08 Исправлен порядок checkout приватных submodules: загрузка вынесена в отдельный скрипт; обработка submodules больше не зависит от заполнения subProjects.
+1.09 CI использует общий скрипт Checkout-Submodules.ps1 для загрузки приватных submodules, как Release.

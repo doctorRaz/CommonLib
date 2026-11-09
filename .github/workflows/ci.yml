@@ -25,9 +25,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-            persist-credentials: true
-            fetch-depth: 1
-            submodules: true
+          persist-credentials: true
+          fetch-depth: 1
+          submodules: false
+
+      # Используем тот же механизм загрузки приватных submodules, что и Release.
+      - name: Checkout submodules
+        if: ${{ hashFiles('.gitmodules') != '' }}
+        shell: pwsh
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.PRIVATE_SUBMODULE_TOKEN }}
+        run: ./.github/scripts/Checkout-Submodules.ps1
     
       - name: Read build configuration
         id: config
