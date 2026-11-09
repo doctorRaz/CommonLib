@@ -63,20 +63,25 @@ namespace dRz.Updater
         }
 
         /// <summary>
-        /// Выполняет проверку и установку обновления согласно параметрам запроса. При ручном запуске
-        /// принудительно использует режим <see cref="UpdateMode.CheckAndNotify"/>.
-        /// Если локальное расположение основной сборки не подтверждено, обновление не выполняется.
+        /// Подготавливает обновление согласно параметрам запроса: проверяет manifest, загружает
+        /// и проверяет архив, затем распаковывает его во временный каталог. Установленные файлы
+        /// не изменяются; готовый пакет возвращается в <see cref="UpdatePreparation"/>.
+        /// При ручном запуске принудительно использует режим <see cref="UpdateMode.CheckAndNotify"/>.
+        /// Если локальное расположение основной сборки не подтверждено, подготовка не выполняется.
+        /// Установка подготовленного пакета выполняется отдельно методом <see cref="InstallPrepared"/>.
         /// </summary>
         /// <param name="request">Параметры обновления, сформированные основным аддоном.</param>
-        /// <param name="cancellationToken">Токен отмены</param>
-        /// <returns>Результат проверки и установки обновления.</returns>
-        public async Task<UpdateResult> RunAsync(
+        /// <param name="cancellationToken">Токен отмены подготовки.</param>
+        /// <returns>Результат подготовки обновления и, если подготовка успешна, готовый пакет.</returns>
+        public async Task<UpdatePreparation> PrepareAsync(
             UpdateRequest request,
             CancellationToken cancellationToken = default)
         {
             string tempDirectoryRoot = Path.Combine(Path.GetTempPath(), "dRz");
 
             string? tempDirectory = null;
+            FileStream? sessionLock = null;
+            PreparedUpdate? preparedUpdate = null;
 
             try
             {
@@ -96,7 +101,7 @@ namespace dRz.Updater
 
                     _logger.Warn(message);
 
-                    return UpdateResult.NetworkPath;
+                    return UpdatePreparation.Completed(UpdateResult.NetworkPath);
                 }
 
                 _logger.Trace("RunAsync");
@@ -107,9 +112,23 @@ namespace dRz.Updater
                     ? UpdateMode.CheckAndNotify
                     : _updateSettings.Mode;
 
-                tempDirectory = Path.Combine(tempDirectoryRoot, nameof(Updater), Guid.NewGuid().ToString("N"));
+                string sessionsDirectory = Path.Combine(tempDirectoryRoot, nameof(Updater));
 
+                // Удаляем только каталоги завершившихся сессий. Активные экземпляры
+                // nanoCAD удерживают эксклюзивную блокировку своего session.lock.
+                CleanupStaleTemporaryDirectories(sessionsDirectory);
+
+                tempDirectory = Path.Combine(sessionsDirectory, Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(tempDirectory);
+
+                // Блокировка удерживается на всём протяжении подготовки и, если пакет готов,
+                // до синхронной установки или явного отказа от неё.
+                string sessionLockPath = Path.Combine(tempDirectory, "session.lock");
+                sessionLock = new FileStream(
+                    sessionLockPath,
+                    FileMode.CreateNew,
+                    FileAccess.ReadWrite,
+                    FileShare.None);
 
                 // update.json нужен даже в Disabled, чтобы mandatory update оставался обнаруживаемым.
                 string updateJsonPath = Path.Combine(tempDirectory, "update.json");
@@ -142,14 +161,14 @@ namespace dRz.Updater
 
                     _logger.Trace(message);
 
-                    return UpdateResult.UpToDate;
+                    return UpdatePreparation.Completed(UpdateResult.UpToDate);
                 }
 
                 // Disabled запрещает необязательные обновления, но не mandatory.
                 // Mandatory обновления выполняются независимо от режима.
                 if (effectiveMode == UpdateMode.Disabled && !update.Mandatory)
                 {
-                    return UpdateResult.Disabled;
+                    return UpdatePreparation.Completed(UpdateResult.Disabled);
                 }
 
                 bool installAutomatically =
@@ -163,7 +182,11 @@ namespace dRz.Updater
 
                     if (result != MessageResult.Yes)
                     {
-                        return UpdateResult.Declined;
+                        return UpdatePreparation.Completed(UpdateResult.Declined);
+                    }
+                    else
+                    {
+                        _messageServices.InfoMessage($"Обновление {update.Product} до версии {update.Version.ToVersion()} будет установлено после перезапуска CAD.");
                     }
                 }
 
@@ -171,7 +194,7 @@ namespace dRz.Updater
                 // При CheckAndNotify запрос согласия уже является уведомлением.
                 if (update.Mandatory)
                 {
-                    string message = $"Обнаружено обязательное обновление {update.Product} до версии {update.Version.ToVersion()}. Оно будет установлено автоматически.";
+                    string message = $"Обнаружено обязательное обновление {update.Product} до версии {update.Version.ToVersion()}. Оно будет установлено автоматически после перезапуска CAD.";
 
                     _logger.Trace(message);
 
@@ -179,7 +202,7 @@ namespace dRz.Updater
                 }
                 else if (effectiveMode == UpdateMode.CheckAndInstall)
                 {
-                    string message = $"Будет выполнено обновление {update.Product} до версии {update.Version.ToVersion()}";
+                    string message = $"После перезапуска CAD будет выполнено обновление {update.Product} до версии {update.Version.ToVersion()}";
 
                     _logger.Trace(message);
 
@@ -194,10 +217,21 @@ namespace dRz.Updater
                     request.UpdateUrl,
                     GetAsset(update));
 
+                // Искусственное замедление включается только в DEBUG и только для архива обновления.
+                // Загрузка update.json выше остаётся быстрой, поэтому тестовая задержка
+                // не мешает обнаружить релиз и дойти до скачивания самого пакета.
+                int downloadDelayMs = UpdaterTestSettings.DownloadDelayBetweenChunksMs;
+                if (downloadDelayMs > 0)
+                {
+                    _logger.Warn(
+                        $"DEBUG-ТЕСТ: включена задержка скачивания {downloadDelayMs} мс после каждого блока.");
+                }
+
                 await _downloader.DownloadAsync(
                     assetUrl,
                     assetFile,
-                    cancellationToken);
+                    cancellationToken,
+                    downloadDelayMs);
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -216,11 +250,6 @@ namespace dRz.Updater
                     tempDirectory,
                     "extracted");
 
-                //консоль:
-                // Перед распаковкой: поток вызывающего кода, ID=7, ThreadPool=True, Name=.NET ThreadPool Worker
-                //нанокад:
-                //  Перед распаковкой: поток вызывающего кода, ID=1, ThreadPool=False, Name=(без имени)
-
                 // Диагностика потока, из которого запускается распаковка.
                 Thread currentThread = Thread.CurrentThread;
                 _logger.Trace(
@@ -230,13 +259,54 @@ namespace dRz.Updater
                 // Выполняем распаковку в отдельном потоке и ожидаем её завершения.
                 // Диагностику потока распаковки пишем в лог: UI-сообщения nanoCAD
                 // не вызываем из фонового потока.
+                // Проверяем отмену до постановки распаковки в ThreadPool.
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // ВАЖНО: не передаём cancellationToken в Task.Run.
+                // SharpSevenZip выполняет синхронную распаковку и не умеет её прерывать.
+                // Если передать токен в Task.Run, отмена может перевести ожидающую задачу
+                // в Canceled, пока уже запущенный делегат ещё работает с архивом и файлами.
+                // Тогда внешний finally сможет попытаться удалить временный каталог
+                // до фактического завершения распаковки.
+                //
+                // Поэтому ожидаем именно завершения делегата без токена, а отмену
+                // проверяем после await. Terminate не ожидает эту задачу: он только
+                // запрашивает отмену и возвращает управление. Если процесс nanoCAD
+                // продолжает работать, фоновая подготовка дождётся окончания распаковки,
+                // обнаружит отмену и удалит каталог в своём finally. При завершении процесса
+                // сама фоновая задача прекращается вместе с процессом; оставшийся каталог
+                // будет удалён при следующем проходе очистки после освобождения session.lock.
                 await Task.Run(() =>
                 {
+                    // Дополнительная проверка внутри делегата закрывает гонку:
+                    // токен мог быть отменён после проверки выше, но до старта работы.
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     Thread extractionThread = Thread.CurrentThread;
                     _logger.Trace(
                         $"Начало распаковки: ID потока={extractionThread.ManagedThreadId}, " +
                         $"ThreadPool={extractionThread.IsThreadPoolThread}, " +
                         $"Name={extractionThread.Name ?? "(без имени)"}");
+
+                    // SharpSevenZip выполняет распаковку одним синхронным вызовом
+                    // и не предоставляет используемому нами CancellationToken механизм отмены.
+                    // DEBUG-задержка намеренно выполняется внутри фоновой задачи без токена.
+                    // Если Terminate вызван, но процесс nanoCAD продолжает работать, после
+                    // паузы задача завершит распаковку, обнаружит отмену и удалит результат.
+                    // При полном завершении процесса задача прекращается вместе с ним,
+                    // а оставшийся временный каталог будет очищен при следующем запуске.
+                    int extractionDelayMs = UpdaterTestSettings.ExtractionDelayBeforeStartMs;
+                    if (extractionDelayMs > 0)
+                    {
+                        _logger.Warn(
+                            $"DEBUG-ТЕСТ: распаковка задержана на {extractionDelayMs} мс. " +
+                            "Можно закрыть nanoCAD и проверить, что Terminate не ожидает распаковку.");
+
+                        Thread.Sleep(extractionDelayMs);
+
+                        _logger.Trace(
+                            "DEBUG-ТЕСТ: задержка распаковки завершена; начинается SharpSevenZip Extract.");
+                    }
 
                     SevenZipService sevenZip = new SevenZipService();
 
@@ -244,7 +314,12 @@ namespace dRz.Updater
                         assetFile,
                         extractedDirectory,
                         GetAssetPassword(update));
-                }, cancellationToken);
+                });
+
+                // Отмена во время распаковки обрабатывается только после её завершения.
+                // К этому моменту SharpSevenZip больше не удерживает временные файлы,
+                // поэтому общий finally сможет безопасно удалить весь каталог сессии.
+                cancellationToken.ThrowIfCancellationRequested();
 
                 string sourceDirectory = Path.Combine(extractedDirectory, update.Product);
 
@@ -268,54 +343,35 @@ namespace dRz.Updater
                 // Во время синхронной установки не прерываем операции, чтобы не нарушить откат.
                 cancellationToken.ThrowIfCancellationRequested();
 
+                // Подготовка завершена. Рабочие файлы аддона пока не изменялись.
+                PreparedUpdate candidate = new PreparedUpdate(
+                    request,
+                    tempDirectory,
+                    sourceDirectory,
+                    update,
+                    fullUpdate,
+                    sessionLock);
+
+                // Передаём владение блокировкой объекту подготовленного обновления.
+                sessionLock = null;
+
                 try
                 {
-                    if (!Installer.MoveDirectoryFilesWithBackup(
-                        sourceDirectory,
-                        request.PackageDirectory,
-                        fullUpdate))
-                    {
-                        throw new IOException("Не удалось установить пакет обновления.");
-                    }
+                    _logger.Trace(
+                        $"Обновление {update.Product} до версии {update.Version.ToVersion()} подготовлено к установке.");
                 }
-                catch (UpdateRollbackException ex)
+                catch
                 {
-                    // Откат не завершён: логируем обе первичные ошибки и не повторяем установку.
-                    _logger.Error(ex.InstallException);
-                    _logger.Error(ex.RollbackException);
-
-                    _messageServices.WarningMessage(
-                        $"Не удалось установить обновление {update.Version.ToVersion()}, и восстановление завершилось ошибкой. " +
-                        $"Приложение может находиться в невалидном состоянии. Скачайте полный релиз и распакуйте его с заменой файлов.", title: "Updater");
-
-                    OpenReleaseIfRequested(request.UpdateUrl, update.Tag);
-                    return UpdateResult.Failed;
-                }
-                catch (Exception installException)
-                {
-                    // Installer выбросил исходную ошибку только после успешного отката.
-                    _logger.Error(installException);
-
-                    _messageServices.WarningMessage(
-                        $"Не удалось установить обновление {update.Version.ToVersion()}; прежнее состояние восстановлено. " +
-                        $"Попробуйте повторить обновление после перезапуска nanoCAD или скачайте релиз вручную.", title: "Updater");
-
-                    OpenReleaseIfRequested(request.UpdateUrl, update.Tag);
-                    return UpdateResult.Failed;
+                    // Диагностика не должна отменять корректно подготовленный пакет.
                 }
 
-                string message2 = $"{update.Product} обновлён с версии {request.CurrentVersion} до версии {update.Version.ToVersion()}\nЧтобы изменения вступили в силу, необходима перезагрузка.";
-
-                _logger.Trace(message2);
-
-                _messageServices.InfoMessage(message2, title: "Updater");
-
-                return UpdateResult.Installed;
+                preparedUpdate = candidate;
+                return UpdatePreparation.Ready(preparedUpdate);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 _logger.Debug("Операция обновления отменена через CancellationToken.");
-                return UpdateResult.Cancelled;
+                return UpdatePreparation.Completed(UpdateResult.Cancelled);
             }
             catch (Exception ex)
             {
@@ -324,26 +380,233 @@ namespace dRz.Updater
                 _messageServices.WarningMessage(
                     $"Не удалось проверить или выполнить обновление: {ex.Message}", title: "Updater");
 
+                return UpdatePreparation.Completed(UpdateResult.Failed);
+            }
+            finally
+            {
+                // Подготовленный пакет остаётся во временном каталоге до установки или отмены.
+                if (preparedUpdate is null)
+                {
+                    try
+                    {
+                        sessionLock?.Dispose();
+                    }
+                    finally
+                    {
+                        CleanupTemporaryDirectory(tempDirectory);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Совместимый сценарий полной проверки и установки.
+        /// </summary>
+        public async Task<UpdateResult> RunAsync(
+            UpdateRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            UpdatePreparation preparation = await PrepareAsync(request, cancellationToken);
+            PreparedUpdate? preparedUpdate = preparation.PreparedUpdate;
+
+            if (preparedUpdate is not null)
+            {
+                return InstallPrepared(preparedUpdate);
+            }
+
+            return preparation.Result ??
+                throw new InvalidOperationException("Результат подготовки не содержит данных.");
+        }
+
+        /// <summary>
+        /// Синхронно устанавливает ранее подготовленный пакет.
+        /// Метод не выполняет сетевых операций и не показывает диалогов пользователю.
+        /// </summary>
+        public UpdateResult InstallPrepared(PreparedUpdate prepared)
+        {
+            ArgumentNullException.ThrowIfNull(prepared);
+
+            try
+            {
+                if (!Installer.MoveDirectoryFilesWithBackup(
+                    prepared.SourceDirectory,
+                    prepared.Request.PackageDirectory,
+                    prepared.FullUpdate))
+                {
+                    throw new IOException("Не удалось установить подготовленный пакет обновления.");
+                }
+
+                prepared.ResultMessage =
+                    $"{prepared.Update.Product} обновлён с версии {prepared.Request.CurrentVersion} " +
+                    $"до версии {prepared.Update.Version.ToVersion()}.";
+
+                try
+                {
+                    _logger.Trace(prepared.ResultMessage);
+                }
+                catch
+                {
+                    // Сбой логирования не меняет результат успешно завершённой установки.
+                }
+
+                return UpdateResult.Installed;
+            }
+            catch (UpdateRollbackException ex)
+            {
+                prepared.ErrorMessage =
+                    "Установка и откат завершились ошибками. Приложение может находиться в невалидном состоянии.";
+                try
+                {
+                    _logger.Error(ex.InstallException);
+                    _logger.Error(ex.RollbackException);
+                }
+                catch
+                {
+                    // Сохраняем результат установки даже при недоступности логгера.
+                }
+
+                return UpdateResult.Failed;
+            }
+            catch (Exception ex)
+            {
+                prepared.ErrorMessage =
+                    $"Не удалось установить обновление; прежнее состояние восстановлено. {ex.Message}";
+                try
+                {
+                    _logger.Error(ex);
+                }
+                catch
+                {
+                    // Сохраняем результат установки даже при недоступности логгера.
+                }
+
                 return UpdateResult.Failed;
             }
             finally
             {
-#if DEBUG
-                tempDirectory = Path.Combine(tempDirectoryRoot, nameof(Updater));
-#endif
+                // Сначала освобождаем блокировку, затем удаляем каталог сессии.
                 try
-
                 {
-                    if (!string.IsNullOrEmpty(tempDirectory) && Directory.Exists(tempDirectory))
+                    prepared.ReleaseSessionLock();
+                }
+                finally
+                {
+                    CleanupTemporaryDirectory(prepared.TempDirectory);
+                }
+            }
+        }
+
+        /// <summary>Удаляет временные файлы подготовленного, но не устанавливаемого обновления.</summary>
+        public void DiscardPrepared(PreparedUpdate prepared)
+        {
+            ArgumentNullException.ThrowIfNull(prepared);
+            try
+            {
+                prepared.ReleaseSessionLock();
+            }
+            finally
+            {
+                CleanupTemporaryDirectory(prepared.TempDirectory);
+            }
+        }
+
+        /// <summary>
+        /// Очищает временные каталоги завершившихся сессий Updater.
+        /// Каталоги активных сессий с занятой блокировкой не затрагиваются.
+        /// </summary>
+        public void CleanupStaleTemporaryDirectories()
+        {
+            string sessionsDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "dRz",
+                nameof(Updater));
+
+            CleanupStaleTemporaryDirectories(sessionsDirectory);
+        }
+
+        /// <summary>
+        /// Удаляет оставшиеся каталоги завершившихся сессий.
+        /// Каталоги без файла блокировки и каталоги с занятой блокировкой пропускаются.
+        /// </summary>
+        private void CleanupStaleTemporaryDirectories(string sessionsDirectory)
+        {
+            try
+            {
+                if (!Directory.Exists(sessionsDirectory))
+                {
+                    return;
+                }
+
+                foreach (string directory in Directory.EnumerateDirectories(sessionsDirectory))
+                {
+                    string lockPath = Path.Combine(directory, "session.lock");
+
+                    // Отсутствие lock-файла трактуем как неопределённое состояние:
+                    // не удаляем каталог, чтобы не вмешаться в создание другой сессии.
+                    if (!File.Exists(lockPath))
                     {
-                        Directory.Delete(tempDirectory, true);
+                        continue;
                     }
 
-                    _logger.Trace("Удалён временный каталог обновления.");
+                    try
+                    {
+                        // Успешное открытие означает, что другой процесс не удерживает lock.
+                        // Дескриптор закрывается до удаления каталога.
+                        using (new FileStream(
+                            lockPath,
+                            FileMode.Open,
+                            FileAccess.ReadWrite,
+                            FileShare.None))
+                        {
+                        }
+
+                        Directory.Delete(directory, recursive: true);
+                        _logger.Trace($"Удалён временный каталог завершившейся сессии: {directory}");
+                    }
+                    catch (IOException)
+                    {
+                        // Каталог принадлежит активной сессии либо временно недоступен.
+                        _logger.Trace($"Временный каталог занят; очистка пропущена: {directory}");
+                    }
+                    catch (UnauthorizedAccessException ex)
+                    {
+                        _logger.Warn($"Нет доступа для очистки временного каталога {directory}: {ex.Message}");
+                    }
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                // Очистка старых временных данных не должна блокировать проверку обновлений.
+                try
                 {
-                    _logger.Error(ex);
+                    _logger.Warn($"Не удалось выполнить очистку временных каталогов Updater: {ex.Message}");
+                }
+                catch
+                {
+                    // Ошибка диагностики не должна влиять на запуск обновления.
+                }
+            }
+        }
+
+        private void CleanupTemporaryDirectory(string? directory)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, true);
+                    _logger.Trace($"Удалён временный каталог обновления: {directory}");
+                }
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    _logger.Error(ex, $"Не удалось удалить временный каталог обновления: {directory}");
+                }
+                catch
+                {
+                    // Ошибка логирования не должна влиять на результат установки.
                 }
             }
         }
