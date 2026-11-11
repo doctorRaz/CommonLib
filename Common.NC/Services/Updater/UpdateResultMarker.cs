@@ -25,19 +25,19 @@ namespace dRz.Common.NC.Services.Updater
 
         /// <summary>Атомарно сохраняет итог установки вне каталога заменяемых файлов.</summary>
         public static void Write(
-            string assemblyDirectory,
+            string markerDirectory,
             UpdateResult result,
             string previousVersion,
             string newVersion,
             string message,
             IDrzLogger logger)
         {
-            string path = Path.Combine(assemblyDirectory, FileName);
+            string path = Path.Combine(markerDirectory, FileName);
             string temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
             try
             {
-                Directory.CreateDirectory(assemblyDirectory);
+                Directory.CreateDirectory(markerDirectory);
 
                 MarkerData data = new MarkerData
                 {
@@ -60,9 +60,9 @@ namespace dRz.Common.NC.Services.Updater
         }
 
         /// <summary>Показывает результат предыдущей установки и удаляет обработанный маркер.</summary>
-        public static void ReportAndDelete(string assemblyDirectory, IMessageService message, IDrzLogger logger)
+        public static void ReportAndDelete(string markerDirectory, IMessageService message, IDrzLogger logger)
         {
-            string path = Path.Combine(assemblyDirectory, FileName);
+            string path = Path.Combine(markerDirectory, FileName);
             if (!File.Exists(path))
             {
                 return;
