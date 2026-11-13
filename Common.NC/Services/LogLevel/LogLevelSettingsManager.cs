@@ -188,7 +188,7 @@ namespace dRz.Common.NC.Services.LogLevel
                 _message.InfoMessage(
                     string.IsNullOrWhiteSpace(level)
                         ? $"Файл {fileName} существует, но первая строка пуста. Фактический уровень {settingName}: {actualLevel}."
-                        : $"В файле {fileName} указан уровень: {level}. Фактический уровень {settingName}: {actualLevel}.");
+                        : $"В файле {fileName} задан уровень: {level}. Фактический уровень {settingName}: {actualLevel}.");
             }
             catch (Exception ex)
             {

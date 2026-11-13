@@ -26,7 +26,7 @@ namespace dRz.Common.NC.Commands.Common
             manager.ManageLevel(
                 AddOnContext.AddOnInfo.AssemblyDirectory,
                 "diagnostic.level",
-                "уровня логирования внутренней диагностики",
+                "логирования внутренней диагностики",
                 AddOnContext.NLogFactory.InternalLogLevel);
         }
 
@@ -45,7 +45,7 @@ namespace dRz.Common.NC.Commands.Common
             manager.ManageLevel(
                 AddOnContext.AddOnInfo.AssemblyDirectory,
                 "logger.level",
-                "уровня логирования",
+                "логирования",
                 LogLevelSettingsManager.GetEffectiveLogLevel(logger));
         }
     }
