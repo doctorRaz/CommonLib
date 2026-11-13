@@ -105,25 +105,41 @@ namespace dRz.Common.NC.Services.LogLevel
         /// После задания или удаления переопределения требуется перезапустить nanoCAD,
         /// чтобы изменение вступило в силу.
         /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// Возникает, если <paramref name="settingsDirectory"/>, <paramref name="fileName"/> или
+        /// <paramref name="settingName"/> равен <see langword="null"/>.
+        /// </exception>
         /// <exception cref="ArgumentException">
         /// Возникает, если каталог настроек, имя файла или название настройки пусты либо содержат только пробелы.
         /// </exception>
-        /// <exception cref="ArgumentNullException">
-        /// Возникает, если обязательный строковый параметр равен <see langword="null"/>.
-        /// </exception>
         /// <exception cref="ArgumentOutOfRangeException">
-        /// Возникает, если поставщик ввода вернул неизвестное значение действия.
+        /// Возникает, если поставщик ввода вернул неизвестное значение действия или уровня логирования.
         /// </exception>
         public void ManageLevel(string settingsDirectory, string fileName, string settingName, string actualLevel)
         {
+            if (settingsDirectory == null)
+            {
+                throw new ArgumentNullException(nameof(settingsDirectory));
+            }
+
             if (string.IsNullOrWhiteSpace(settingsDirectory))
             {
                 throw new ArgumentException("Каталог настроек не задан.", nameof(settingsDirectory));
             }
 
+            if (fileName == null)
+            {
+                throw new ArgumentNullException(nameof(fileName));
+            }
+
             if (string.IsNullOrWhiteSpace(fileName))
             {
                 throw new ArgumentException("Имя файла не задано.", nameof(fileName));
+            }
+
+            if (settingName == null)
+            {
+                throw new ArgumentNullException(nameof(settingName));
             }
 
             if (string.IsNullOrWhiteSpace(settingName))
