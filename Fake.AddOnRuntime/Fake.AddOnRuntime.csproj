@@ -12,7 +12,7 @@
 		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
 		<ProjectReference Include="..\Settings\Settings.csproj" />
 		<ProjectReference Include="..\LogBootstrap\LogBootstrap.csproj" />
-		<ProjectReference Include="..\Test.CadServices\Test.CadServices.csproj" />
+		<ProjectReference Include="..\Fake.CadServices\Fake.CadServices.csproj" />
 		<ProjectReference Include="..\Infrastructure\Infrastructure.csproj">
 			<PrivateAssets>all</PrivateAssets>
 		</ProjectReference>

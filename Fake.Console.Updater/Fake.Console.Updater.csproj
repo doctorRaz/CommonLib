@@ -24,8 +24,8 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
-		<ProjectReference Include="..\Test.AddOnRuntime\Test.AddOnRuntime.csproj" />
-		<ProjectReference Include="..\Test.Common.NC\Test.Common.NC.csproj" />
+		<ProjectReference Include="..\Fake.AddOnRuntime\Fake.AddOnRuntime.csproj" />
+		<ProjectReference Include="..\Fake.Common.NC\Fake.Common.NC.csproj" />
 	</ItemGroup>
 	<!--metadata assemble-->
 	<ItemGroup>
