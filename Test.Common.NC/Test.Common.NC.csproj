@@ -1,16 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
-	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')" />
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')" />
 <PropertyGroup>
 		<TargetFramework>net6.0-windows</TargetFramework>
 		<Description>Общие служебные</Description>
+		<IsPackable>false</IsPackable>
+		<IsTestProject>true</IsTestProject>
+		<Nullable>enable</Nullable>
 	</PropertyGroup>
 	<PropertyGroup>
 		<DefineConstants>$(DefineConstants);TEST</DefineConstants>
 	</PropertyGroup>
 	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+		<PackageReference Include="Moq" Version="4.21.0" />
+		<PackageReference Include="NUnit" Version="4.3.2" />
+		<PackageReference Include="NUnit3TestAdapter" Version="5.0.0" />
+	</ItemGroup>
+	<ItemGroup>
+		<Compile Include="..\Common.NC\CadServices\**\*.cs" Link="CadServices\%(RecursiveDir)%(Filename)%(Extension)" />
 		<Compile Include="..\Common.NC\Infrastructure\**\*.cs" Link="Infrastructure\%(RecursiveDir)%(Filename)%(Extension)" />
 		<Compile Include="..\Common.NC\Services\**\*.cs" Link="Services\%(RecursiveDir)%(Filename)%(Extension)" />
+		<!--		-->
+		<Compile Remove="..\Common.NC\CadServices\KeywordPrompt.cs" />
+		<Compile Remove="..\Common.NC\CadServices\Diagnostics\*.cs" />
+		<Compile Remove="..\Common.NC\Commands\**\*" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />

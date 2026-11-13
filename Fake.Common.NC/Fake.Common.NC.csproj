@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<Import Project="..\$(SolutionName).Build.props" Condition="Exists('..\$(SolutionName).Build.props')"/>
+	<Import Project="..\$(SolutionName).Build.targets" Condition="Exists('..\$(SolutionName).Build.targets')"/>
+	<PropertyGroup>
+		<TargetFramework>net6.0-windows</TargetFramework>
+		<Description>Общие служебные</Description>
+	</PropertyGroup>
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);TEST</DefineConstants>
+	</PropertyGroup>
+	<ItemGroup>
+		<Compile Include="..\Common.NC\CadServices\**\*.cs" Link="CadServices\%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="..\Common.NC\Infrastructure\**\*.cs" Link="Infrastructure\%(RecursiveDir)%(Filename)%(Extension)" />
+		<Compile Include="..\Common.NC\Services\**\*.cs" Link="Services\%(RecursiveDir)%(Filename)%(Extension)" />
+		<!--		-->
+		<Compile Remove="..\Common.NC\CadServices\KeywordPrompt.cs" />
+		<Compile Remove="..\Common.NC\CadServices\Diagnostics\*.cs" />
+		<Compile Remove="..\Common.NC\Commands\**\*" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+		<ProjectReference Include="..\Updater\Updater.csproj" />
+	</ItemGroup>
+</Project>
