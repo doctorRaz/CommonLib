@@ -20,6 +20,10 @@ namespace dRz.Abstractions.Infrastructure
         /// <value>The company.</value>
         string Company { get; }
 
+        /// <summary>Gets the trademark.</summary>
+        /// <value>The trademark.</value>
+        string Trademark { get; }
+
         /// <summary>Возвращает путь к корневому каталогу ад дона где находится package</summary>
         /// <value>путь к корневому каталогу ад дона</value>
         string PackageDirectory { get; }

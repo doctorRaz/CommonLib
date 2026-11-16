@@ -85,6 +85,8 @@ namespace dRz.Infrastructure.Infrastructure
 
             Company = assembly.GetCustomAttribute<AssemblyCompanyAttribute>()?.Company ?? "dRz";
 
+            Trademark = assembly.GetCustomAttribute<AssemblyTrademarkAttribute>()?.Trademark??"doctorRaz";
+
             CompanyDataDirectory = Path.Combine(_appData, Company);
 
             ProductDataDirectory = Path.Combine(CompanyDataDirectory, Product);
@@ -261,6 +263,9 @@ namespace dRz.Infrastructure.Infrastructure
         /// <summary>Возвращает название компании — разработчика сборки.</summary>
         /// <value>Название компании из <see cref="AssemblyCompanyAttribute"/> либо <c>dRz</c>, если атрибут отсутствует.</value>
         public string Company { get; }
+
+
+        public string Trademark { get; }
 
         /// <summary>
         /// "Полное Имя" сборки, используется для показа в заголовках диалогов, окон, сообщений
