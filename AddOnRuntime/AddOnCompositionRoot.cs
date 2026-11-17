@@ -163,10 +163,12 @@ namespace dRz.AddOnRuntime
             {
                 IAddOnInfo addonInfo = container.GetInstance<IAddOnInfo>();
 
+                ICadInfo cadInfo = container.GetInstance<ICadInfo>();
+
                 string filePath = Path.Combine(
                                                 addonInfo.ProductDataDirectory,
                                                 "Settings",
-                                                addonInfo.HostFamily,
+                                                cadInfo.ProductName,
                                                 "GeneralSettings.json"
                                                );
 
