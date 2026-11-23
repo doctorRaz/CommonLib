@@ -60,7 +60,10 @@ namespace dRz.Common.NC.Services.Updater
         }
 
         /// <summary>Показывает результат предыдущей установки и удаляет обработанный маркер.</summary>
-        public static void ReportAndDelete(string markerDirectory, IMessageService message, IDrzLogger logger)
+        public static void ReportAndDelete(string markerDirectory,
+                                           IMessageService message,
+                                           IMcNotificatorMessageService mcNotificatorMessageService,
+                                           IDrzLogger logger)
         {
             string path = Path.Combine(markerDirectory, FileName);
             if (!File.Exists(path))
@@ -84,10 +87,12 @@ namespace dRz.Common.NC.Services.Updater
 
                 if (result == UpdateResult.Installed)
                 {
+                    mcNotificatorMessageService.InfoMessage(text,title: "Updater");
                     message.InfoMessage(text, title: "Updater");
                 }
                 else
                 {
+                    mcNotificatorMessageService.WarningMessage(text, title: "Updater");
                     message.WarningMessage(text, title: "Updater");
                 }
 
