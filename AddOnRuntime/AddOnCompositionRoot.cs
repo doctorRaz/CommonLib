@@ -167,7 +167,6 @@ namespace dRz.AddOnRuntime
 
                 string filePath = Path.Combine(
                                                 addonInfo.ProductDataDirectory,
-                                                "Settings",
                                                 cadInfo.ProductName,
                                                 "GeneralSettings.json"
                                                );
