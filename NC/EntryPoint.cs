@@ -12,28 +12,12 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-#if !TEST
-
-using dRz.Common.NC.Commands;
-
-#endif
-
 #if NC
 
 using App = HostMgd.ApplicationServices;
 using HostMgd.EditorInput;
 using Rtm = Teigha.Runtime;
 using dRz.Common.NC.Commands.Common;
-
-#elif AC
-
-using Autodesk.AutoCAD.DatabaseServices;
-using App = Autodesk.AutoCAD.ApplicationServices;
-using Cad = Autodesk.AutoCAD.ApplicationServices.Application;
-using Db = Autodesk.AutoCAD.DatabaseServices;
-using Gem = Autodesk.AutoCAD.Geometry;
-using Ed = Autodesk.AutoCAD.EditorInput;
-using Rtm = Autodesk.AutoCAD.Runtime;
 
 #endif
 
@@ -56,6 +40,8 @@ namespace dRz.NC
         private IDrzLoggerFactory _loggerFactory = null!;// Фабрика логгеров для создания логгеров в других классах.
 
         private IMessageService _message = null!;// Сервис пользовательских сообщений.
+
+        private IMcNotificatorMessageService _mcNotificatorMessage = null!;
 
         private IWindowMessageService _windowMessage = null!;// Сервис оконных сообщений.
 
@@ -90,7 +76,7 @@ namespace dRz.NC
                 UpdateAsync.SetManualCheckHandler(StartManualUpdate);
 
                 // Показываем результат установки, выполненной при предыдущем завершении nanoCAD.
-                UpdateResultMarker.ReportAndDelete(_addOnInfo.AssemblyDirectory, _message, _logger);
+                UpdateResultMarker.ReportAndDelete(_addOnInfo.PackageDirectory, _message, _mcNotificatorMessage, _logger);
 
                 // Проверяем, что аддон загружен в родной каталог, и предупреждаем пользователя о возможных ошибках.
 
@@ -154,6 +140,7 @@ namespace dRz.NC
 
                 // Получаем сервис сообщений с запросом из контейнера сервисов.
                 _messagePrompt = AddOnContext.MsgP;
+                _mcNotificatorMessage = AddOnContext.MsgN;
 
                 // Получаем настройки аддона из контейнера сервисов.
                 _settings = AddOnContext.AddonSettings;
@@ -201,10 +188,12 @@ namespace dRz.NC
                     _isTerminating = false;
                     _updateCancellation?.Dispose();
                     _updateCancellation = new CancellationTokenSource();
-                    _updateAsync ??= new UpdateAsync(_loggerFactory, _message, _messagePrompt);
+                    _updateAsync ??= new UpdateAsync(_loggerFactory,
+                                                     _message,
+                                                     _messagePrompt,
+                                                     _mcNotificatorMessage);
 
-                    _updateTask = _updateAsync.PrepareUpdateAsyncRun(
-                        launchMode,
+                    _updateTask = _updateAsync.PrepareUpdateAsyncRun(launchMode,
                         _settings,
                         _addOnInfo,
                         _updateCancellation.Token);
@@ -232,7 +221,6 @@ namespace dRz.NC
                 HandleError(ex, "Не удалось запустить фоновую подготовку обновления.", isFatal: false, notifyUser: false);
             }
         }
-
 
         private void StartManualUpdate()
         {
