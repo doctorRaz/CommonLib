@@ -24,6 +24,12 @@ public class CadInfo : ICadInfo
 
             string? path = GetExePath();
 
+#if TEST
+
+            path = @"c:\Program Files\Nanosoft\nanoCAD x64 26.0\nCadS.exe";
+
+#endif
+
             if (string.IsNullOrEmpty(path))
             {
                 throw new FileNotFoundException("Path not found");
