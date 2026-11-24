@@ -22,6 +22,7 @@ namespace dRz.Updater
         private readonly IDrzLogger _cleanerLogger;
         private readonly IMessageService _messageServices;
         private readonly IMessagePromptService _promptService;
+        private readonly IMcNotificatorMessageService _mcNotificatorMessage;
         private readonly IUpdateSettings _updateSettings;
         private readonly Downloader _downloader;
 
@@ -33,13 +34,15 @@ namespace dRz.Updater
         /// <param name="loggerFactory">Фабрика логгеров.</param>
         /// <param name="updateSettings">Настройки обновления, принадлежащие основному аддону.</param>
         public UpdateManager(
-            IMessageService messageServices,
-            IMessagePromptService promptService,
-            IDrzLoggerFactory loggerFactory,
-            IUpdateSettings updateSettings)
+                            IMessageService messageServices,
+                            IMessagePromptService promptService,
+                            IMcNotificatorMessageService mcNotificatorMessage,
+                            IDrzLoggerFactory loggerFactory,
+                            IUpdateSettings updateSettings)
         {
             _messageServices = messageServices;
             _promptService = promptService;
+            _mcNotificatorMessage = mcNotificatorMessage;
             _updateSettings = updateSettings ?? throw new ArgumentNullException(nameof(updateSettings));
             _downloader = new Downloader();
             _logger = loggerFactory.GetLogger<UpdateManager>();
@@ -156,6 +159,7 @@ namespace dRz.Updater
                             message += $" Чтобы изменения вступили в силу, необходима перезагрузка.";
                         }
 
+                        _mcNotificatorMessage.InfoMessage(message, title: "Updater");
                         _messageServices.InfoMessage(message, title: "Updater");
                     }
 
@@ -186,6 +190,7 @@ namespace dRz.Updater
                     }
                     else
                     {
+                        _mcNotificatorMessage.InfoMessage($"Обновление {update.Product} до версии {update.Version.ToVersion()} будет установлено после перезапуска CAD.");
                         _messageServices.InfoMessage($"Обновление {update.Product} до версии {update.Version.ToVersion()} будет установлено после перезапуска CAD.");
                     }
                 }
@@ -198,6 +203,7 @@ namespace dRz.Updater
 
                     _logger.Trace(message);
 
+                    _mcNotificatorMessage.InfoMessage(message, title: "Updater");
                     _messageServices.InfoMessage(message, title: "Updater");
                 }
                 else if (effectiveMode == UpdateMode.CheckAndInstall)
@@ -206,6 +212,7 @@ namespace dRz.Updater
 
                     _logger.Trace(message);
 
+                    _mcNotificatorMessage.InfoMessage(message, title: "Updater");
                     _messageServices.InfoMessage(message, title: "Updater");
                 }
 
@@ -377,8 +384,8 @@ namespace dRz.Updater
             {
                 _logger.Error(ex);
 
-                _messageServices.WarningMessage(
-                    $"Не удалось проверить или выполнить обновление: {ex.Message}", title: "Updater");
+                _mcNotificatorMessage.WarningMessage($"Не удалось проверить или выполнить обновление: {ex.Message}", title: "Updater");
+                _messageServices.WarningMessage($"Не удалось проверить или выполнить обновление: {ex.Message}", title: "Updater");
 
                 return UpdatePreparation.Completed(UpdateResult.Failed);
             }
@@ -635,8 +642,8 @@ namespace dRz.Updater
             catch (Exception ex)
             {
                 _logger.Error(ex);
-                _messageServices.WarningMessage(
-                    $"Не удалось открыть страницу релиза автоматически. Откройте ссылку вручную: {releaseUrl}", title: "Updater");
+                _mcNotificatorMessage.WarningMessage($"Не удалось открыть страницу релиза автоматически. Откройте ссылку вручную: {releaseUrl}", title: "Updater");
+                _messageServices.WarningMessage($"Не удалось открыть страницу релиза автоматически. Откройте ссылку вручную: {releaseUrl}", title: "Updater");
             }
         }
 

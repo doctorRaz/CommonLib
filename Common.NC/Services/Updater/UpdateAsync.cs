@@ -33,6 +33,7 @@ namespace dRz.Common.NC.Services.Updater
         private readonly IDrzLogger _logger;
         private readonly IMessageService _msg;
         private readonly IMessagePromptService _msgprt;
+        private readonly IMcNotificatorMessageService _mcNotificatorMessage;
         private readonly IDrzLoggerFactory _loggerFactory;
 
         private UpdateManager? _updateManager;
@@ -49,45 +50,48 @@ namespace dRz.Common.NC.Services.Updater
         public UpdateResult? LastInstallResult { get; private set; }
 
         /// <summary>Создаёт координатор обновления.</summary>
-        public UpdateAsync(
-            IDrzLoggerFactory drzLoggerFactory,
-            IMessageService messageService,
-            IMessagePromptService messagePromptService)
+        public UpdateAsync(IDrzLoggerFactory drzLoggerFactory,
+                           IMessageService messageService,
+                           IMessagePromptService messagePromptService,
+                           IMcNotificatorMessageService mcNotificatorMessage)
         {
             _loggerFactory = drzLoggerFactory;
+
             _logger = _loggerFactory.GetLogger(typeof(UpdateAsync));
+
             _msg = messageService;
+
             _msgprt = messagePromptService;
+
+            _mcNotificatorMessage = mcNotificatorMessage;
         }
 
         /// <summary>
         /// Асинхронно проверяет, загружает и распаковывает обновление.
         /// Установленные файлы не изменяются.
         /// </summary>
-        public async Task PrepareUpdateAsyncRun(
-            UpdateLaunchMode launchMode,
-            IAddonSettings settings,
-            IAddOnInfo addOnInfo,
-            CancellationToken cancellationToken = default)
+        public async Task PrepareUpdateAsyncRun(UpdateLaunchMode launchMode,
+                                                IAddonSettings settings,
+                                                IAddOnInfo addOnInfo,
+                                                CancellationToken cancellationToken = default)
         {
             try
             {
                 _settings = settings ?? throw new ArgumentNullException(nameof(settings));
                 _updateSettings = settings.Updates;
 
-                _updateManager = new UpdateManager(
-                    _msg,
-                    _msgprt,
-                    _loggerFactory,
-                    _updateSettings);
+                _updateManager = new UpdateManager(_msg,
+                                                   _msgprt,
+                                                   _mcNotificatorMessage,
+                                                   _loggerFactory,
+                                                   _updateSettings);
 
                 if (launchMode == UpdateLaunchMode.Automatic)
                 {
                     try
                     {
-                        await Task.Run(
-                            () => _updateManager.Cleanup(addOnInfo.PackageDirectory),
-                            cancellationToken);
+                        await Task.Run(() => _updateManager.Cleanup(addOnInfo.PackageDirectory),
+                                        cancellationToken);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {

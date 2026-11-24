@@ -85,7 +85,7 @@ namespace dRz.Infrastructure.Infrastructure
 
             Company = assembly.GetCustomAttribute<AssemblyCompanyAttribute>()?.Company ?? "dRz";
 
-            Trademark = assembly.GetCustomAttribute<AssemblyTrademarkAttribute>()?.Trademark??"doctorRaz";
+            Trademark = assembly.GetCustomAttribute<AssemblyTrademarkAttribute>()?.Trademark ?? "doctorRaz";
 
             CompanyDataDirectory = Path.Combine(_appData, Company);
 
@@ -263,7 +263,6 @@ namespace dRz.Infrastructure.Infrastructure
         /// <summary>Возвращает название компании — разработчика сборки.</summary>
         /// <value>Название компании из <see cref="AssemblyCompanyAttribute"/> либо <c>dRz</c>, если атрибут отсутствует.</value>
         public string Company { get; }
-
 
         public string Trademark { get; }
 
@@ -549,15 +548,5 @@ namespace dRz.Infrastructure.Infrastructure
                 return null;
             }
         }
-
-        /*
-
-используем FindPackageFile для поиска папки ROOT с аддоном, затем ищем в ней все *.bak и *.~* и удаляем их
-
-string start = Path.GetDirectoryName(typeof(Updater).Assembly.Location)!;
-
-string? root = FindPackageFile(start, "SpecSPDS");
-
-  */
     }
 }
