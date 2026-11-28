@@ -48,7 +48,12 @@ namespace dRz.Infrastructure.NC.Services.Message
         /// <param name="caller">Имя вызывающего члена.</param>
         /// <param name="title">Необязательный заголовок.</param>
         public static void WriteMessage(NotificationType notificationType, string message, string? caller, string? title = null) =>
+#if TEST
+            Console.WriteLine(Formatted(message, caller, title), caller);
+
+#else
             MulticadNotificator.CreateMessage(Formatted(message, caller, title), notificationType);
+#endif
 
         /// <summary>
         /// Создаёт обычное уведомление для резервного вывода сообщений командной строки.
@@ -56,7 +61,12 @@ namespace dRz.Infrastructure.NC.Services.Message
         /// <param name="message">Текст уведомления.</param>
         /// <param name="caller">Имя вызывающего члена.</param>
         public static void WriteMessage(string message, string? caller) =>
+#if TEST
+            Console.WriteLine(Formatted(message, caller, null), caller);
+
+#else
             MulticadNotificator.CreateMessage(Formatted(message, caller, null), NotificationType.neCure);
+#endif
 
         /// <summary>Добавляет к сообщению заголовок и имя вызывающего члена, если они заданы.</summary>
         /// <param name="message">Исходный текст.</param>
